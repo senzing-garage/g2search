@@ -77,7 +77,7 @@ This section dictates the weighted scoring of search results. For every matched 
 a 1 to 100 score of how close the name was, how close the address was, etc. These scores can be used to create an overall score 
 for the matched record.
 
-see [Scoring-Search-Results](https://senzing.zendesk.com/hc/en-us/articles/360047855193-Scoring-Search-Results)
+see the article [Scoring-Search-Results](https://senzing.zendesk.com/hc/en-us/articles/360047855193-Scoring-Search-Results)
 
 #### Output section
 
