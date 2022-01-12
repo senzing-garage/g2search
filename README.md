@@ -20,7 +20,7 @@ optional arguments:
   -m MAPPINGFILENAME, --mappingFileName MAPPINGFILENAME
                         the name of a mapping file
   -i INPUTFILENAME, --inputFileName INPUTFILENAME
-                        the name of a csv input file
+                        the name of a input file
   -o OUTPUTFILENAME, --outputFileName OUTPUTFILENAME
                         the name of the output file
   -l LOGFILENAME, --log_file LOGFILENAME
