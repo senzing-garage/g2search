@@ -93,7 +93,7 @@ Filters include:
 Output columns:
 
 Output columns can come from the search record, the api, or the matched entity 
-as inidicated by the "source" attribute.
+as indicated by the "source" attribute.
 
 - input: This is helpful so that you can quickly see what record was searched for.  
 You can specify any of the following ...
