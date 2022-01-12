@@ -33,7 +33,7 @@ optional arguments:
 2. [Installation](#Installation)
 3. [Mapping file](#Mapping-file)
 4. [Typical use](#Typical-use)
-5. [Statistics captured](#Statistics-captured)
+5. [Sample output](#Sample-output)
 
 ### Prerequisites
 - Python 3.6 or higher
@@ -128,10 +128,22 @@ You can specify any of the following ...
 python G2Search.py -m search_map_template.json -i /search_list.json -o search_result.csv -l search_result.json
 ```
 
-### Statistics captured
+### Sample output
 
-These are displayed at the end of the run and captured in the log file if 
-specified.  see the [sample_search_report.json](sample_search_report.json) file.
+*see the [sample_search_result.csv](sample_search_result.csv) file to see the result of all your searches*
+
+All of the search results are output to a csv file.   
+
+There will be one or more rows for each search record.  
+* match_number: the match_number column will be zero if no rows are found match_number 1 will be the 
+best match found as determined by the weighted score. match_numbers 2-n are any additional matches 
+found also ranked by the weighed score.
+
+
+*see the [sample_search_result.json](sample_search_result.json) file*
+
+These accumulated statistics are displayed at the end of the run and captured in the log file if 
+specified.  
 
 - summary: The summary section shows the total number searches performed and 
 the total that returned any sort of a match (resolved, possible, name_only)
