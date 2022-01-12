@@ -756,7 +756,7 @@ def processFile():
         print(json.dumps(statPack, indent = 4))    
         if logFileName:
             with open(logFileName, 'w') as outfile:
-                json.dump(statPack, outfile)    
+                json.dump(statPack, outfile, indent=4)    
 
     #--close all inputs and outputs
     outputFileHandle.close()
