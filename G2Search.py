@@ -779,7 +779,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=iniFileName, help='name of the g2.ini file, defaults to %s' % iniFileName)
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
-    parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of a csv input file')
+    parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of an input file')
     parser.add_argument('-d', '--delimiterChar', dest='delimiterChar', help='delimiter character')
     parser.add_argument('-e', '--fileEncoding', dest='fileEncoding', help='file encoding')
     parser.add_argument('-o', '--outputFileName', dest='outputFileName', help='the name of the output file')
