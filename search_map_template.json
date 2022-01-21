@@ -39,7 +39,7 @@
     }
   },
   "output": {
-    "fileType": "csv",
+    "fileFormat": "csv",
     "matchLevelFilter": 0,
     "nameScoreFilter": 0,
     "maxReturnCount": 10,
