@@ -10,21 +10,28 @@ Usage:
 ```console
 python G2Search.py --help                                                                          
 usage: G2Search.py [-h] [-c INI_FILE_NAME] [-m MAPPINGFILENAME]
-                   [-i INPUTFILENAME] [-o OUTPUTFILENAME] [-l LOGFILENAME] 
+                   [-i INPUTFILENAME] [-d DELIMITERCHAR] [-e FILEENCODING]
+                   [-o OUTPUTFILENAME] [-l LOGFILENAME] [-nt THREAD_COUNT]
 
 optional arguments:
   -h, --help            show this help message and exit
   -c INI_FILE_NAME, --config_file_name INI_FILE_NAME
-                        name of the G2Module.ini file, defaults to
+                        name of the g2.ini file, defaults to
                         /etc/opt/senzing/G2Module.ini
   -m MAPPINGFILENAME, --mappingFileName MAPPINGFILENAME
                         the name of a mapping file
   -i INPUTFILENAME, --inputFileName INPUTFILENAME
                         the name of an input file
+  -d DELIMITERCHAR, --delimiterChar DELIMITERCHAR
+                        delimiter character
+  -e FILEENCODING, --fileEncoding FILEENCODING
+                        file encoding
   -o OUTPUTFILENAME, --outputFileName OUTPUTFILENAME
                         the name of the output file
   -l LOGFILENAME, --log_file LOGFILENAME
-                        optional statistics filename (json format)               
+                        optional statistics filename (json format)
+  -nt THREAD_COUNT, --thread_count THREAD_COUNT
+                        number of threads to start
 ```
 
 ## Contents
@@ -42,8 +49,6 @@ optional arguments:
 *If using an SSHD container, you should first max it out with at least 4 processors and 30g of ram as the more threads 
 you give it, the faster it will run.  Also, if the database container is not set to auto-scale, you should give it  
 additional resources as well.*
-
-### Installation
 
 1. Place the following files in a directory of your choice:
     - [G2Search.py](G2Search.py) 
@@ -127,6 +132,10 @@ You can specify any of the following ...
 ```console
 python G2Search.py -m search_map_template.json -i /search_list.json -o search_result.csv -l search_result.json
 ```
+
+The -nt THREAD_COUNT parameter will default to the max the resources of the computer or container you are 
+using.  However, you can override this to add more threads if desired.  For instance, if access to the database
+is slow, you can increase the number of threads running as they spend a lot of time waiting on database queries.
 
 ### Sample output
 
