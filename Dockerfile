@@ -1,11 +1,11 @@
-ARG BASE_IMAGE=senzing/senzing-base:1.6.4
+ARG BASE_IMAGE=debian:11.2-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7de5be5587ec8ce7b9b50f9c
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2022-01-06
+ENV REFRESHED_AT=2022-02-16
 
-LABEL Name="senzing/template" \
+LABEL Name="senzing/g2search" \
       Maintainer="support@senzing.com" \
-      Version="1.2.1"
+      Version="1.0.0"
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
@@ -13,9 +13,16 @@ HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
 USER root
 
+RUN apt-get update \
+ && apt-get -y install \
+      python3 \
+      python3-pip \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install packages via PIP.
 
-COPY requirements.txt ./
+COPY requirements.txt .
 RUN pip3 install --upgrade pip \
  && pip3 install -r requirements.txt \
  && rm requirements.txt
@@ -25,6 +32,7 @@ RUN pip3 install --upgrade pip \
 # Copy files from repository.
 
 COPY ./rootfs /
+COPY ./G2Search.py /app/
 
 # Make non-root container.
 
