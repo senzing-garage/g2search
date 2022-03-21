@@ -71,7 +71,8 @@ def wait_for_queue(qname, q):
     while q.qsize() and shutDown.value == 0:
         time.sleep(5)
         waits += 1
-        if False: #waits >= 10:  disabled in favor of control-c shutDown
+        #--disabled in favor of control-c shutDown
+        if False: #waits >= 10:  
             break
         elif q.qsize():
             logging.info(f'waiting for {q.qsize()} {qname} records')
