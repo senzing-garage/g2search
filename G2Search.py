@@ -50,6 +50,7 @@ def queue_write(queue, message):
 
 #---------------------------------------
 def wait_for_queues(search_queue, result_queue):
+    #--currently not used in favor of waiting for each queue
     waits = 0
     while search_queue.qsize() or result_queue.qsize():
         time.sleep(5)
@@ -67,10 +68,11 @@ def wait_for_queues(search_queue, result_queue):
 #---------------------------------------
 def wait_for_queue(qname, q):
     waits = 0
-    while q.qsize():
+    while q.qsize() and shutDown.value == 0:
         time.sleep(5)
         waits += 1
-        if waits >= 10:
+        #--disabled in favor of control-c shutDown
+        if False: #waits >= 10:  
             break
         elif q.qsize():
             logging.info(f'waiting for {q.qsize()} {qname} records')
