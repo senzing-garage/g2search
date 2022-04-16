@@ -920,8 +920,6 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=iniFileName, help='name of the g2.ini file, defaults to %s' % iniFileName)
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
     parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of an input file')
-    parser.add_argument('-d', '--delimiterChar', dest='delimiterChar', help='delimiter character')
-    parser.add_argument('-e', '--fileEncoding', dest='fileEncoding', help='file encoding')
     parser.add_argument('-o', '--outputFileName', dest='outputFileName', help='the name of the output file')
     parser.add_argument('-l', '--log_file', dest='logFileName', help='optional statistics filename (json format)')
     parser.add_argument('-nt', '--thread_count', type=int, default=0, help='number of threads to start')
@@ -931,8 +929,6 @@ if __name__ == "__main__":
     ini_file_name = args.ini_file_name
     mappingFileName = args.mappingFileName
     inputFileName = args.inputFileName
-    delimiterChar = args.delimiterChar
-    fileEncoding = args.fileEncoding
     outputFileName = args.outputFileName
     logFileName = args.logFileName
     threadCount = args.thread_count
