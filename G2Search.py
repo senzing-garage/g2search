@@ -12,45 +12,57 @@ import csv
 import json
 import glob
 
-#--multi-threading
 from multiprocessing import Process, Queue, Value, Manager
 from queue import Empty, Full
 import threading
 import math
 
-
-#--senzing python classes
-try: 
+# Import from Senzing
+try:
     import G2Paths
-    from G2Product import G2Product
-    from G2Engine import G2Engine
-    from G2IniParams import G2IniParams
-    from G2ConfigMgr import G2ConfigMgr
-    from G2Exception import G2Exception
-    from G2Diagnostic import G2Diagnostic
-except:
-    print('\nPlease export PYTHONPATH=<path to senzing python directory>\n')
-    sys.exit(1)
+    try:
+        from G2IniParams import G2IniParams
+        from senzing import G2ConfigMgr, G2Diagnostic, G2Engine, G2EngineFlags, G2Exception, G2Product
+    except:
+        from senzing import G2ConfigMgr, G2Diagnostic, G2Engine, G2EngineFlags, G2Exception, G2Product, G2IniParams
+except Exception as err:
 
-#---------------------------------------
+    # Fall back to pre-Senzing-Python-SDK style of imports.
+    try:
+        import G2Paths
+        from G2IniParams import G2IniParams
+        from G2Product import G2Product
+        from G2Config import G2Config
+        from G2ConfigMgr import G2ConfigMgr
+        from G2Diagnostic import G2Diagnostic
+        from G2Engine import G2Engine
+        from G2Exception import G2Exception
+    except:
+        print(f"\nCould not import Senzing modules:\n{err}\n")
+        sys.exit(1)
+
+
+# ---------------------------------------
 def queue_read(queue): 
-    try: return queue.get(True, 1)
+    try: 
+        return queue.get(True, 1)
     except Empty:
         time.sleep(.1)
         return None
 
-#---------------------------------------
+# ---------------------------------------
 def queue_write(queue, message): 
     while True:
-        try: queue.put(message, True, 1)
+        try: 
+            queue.put(message, True, 1)
         except Full:
             time.sleep(.01)
             continue
         break
 
-#---------------------------------------
+# ---------------------------------------
 def wait_for_queues(search_queue, result_queue):
-    #--currently not used in favor of waiting for each queue
+    # --currently not used in favor of waiting for each queue
     waits = 0
     while search_queue.qsize() or result_queue.qsize():
         time.sleep(5)
@@ -65,13 +77,13 @@ def wait_for_queues(search_queue, result_queue):
         return False
     return True
 
-#---------------------------------------
+# ---------------------------------------
 def wait_for_queue(qname, q):
     waits = 0
     while q.qsize() and shutDown.value == 0:
         time.sleep(5)
         waits += 1
-        #--disabled in favor of control-c shutDown
+        # --disabled in favor of control-c shutDown
         if False: #waits >= 10:  
             break
         elif q.qsize():
@@ -81,45 +93,38 @@ def wait_for_queue(qname, q):
         return False
     return True
 
-#---------------------------------------
+# ---------------------------------------
 def setup_search_queue(thread_count, stop_search_threads, search_queue, result_queue, mappingDoc):
     try: 
         g2Engine = G2Engine()
-        g2Engine.initV2('G2Search', iniParams, False)
+        g2Engine.init('G2Search', iniParams, False)
     except G2Exception as ex:
         logging.error(f'G2Exception: {ex}')
         with shutDown.get_lock():
             shutDown.value = 1
         return
 
-    #--use minimal format unless record data requested
-    #--initialize search flags
-    #--
-    #-- G2_ENTITY_MINIMAL_FORMAT = ( 1 << 18 )
-    #-- G2_ENTITY_BRIEF_FORMAT = ( 1 << 20 )
-    #-- G2_ENTITY_INCLUDE_NO_FEATURES
-    #--
-    #-- G2_EXPORT_INCLUDE_RESOLVED = ( 1 << 2 )
-    #-- G2_EXPORT_INCLUDE_POSSIBLY_SAME = ( 1 << 3 )
-    #--
-    #if apiVersion['VERSION'][0:1] > '1':
-    searchFlags = g2Engine.G2_SEARCH_INCLUDE_ALL_ENTITIES
-    searchFlags = searchFlags | g2Engine.G2_SEARCH_INCLUDE_FEATURE_SCORES
-    searchFlags = searchFlags | g2Engine.G2_ENTITY_INCLUDE_ENTITY_NAME
-    searchFlags = searchFlags | g2Engine.G2_ENTITY_INCLUDE_RECORD_FORMATTED_DATA
-    searchFlags = searchFlags | g2Engine.G2_ENTITY_INCLUDE_RECORD_JSON_DATA
-    searchFlags = searchFlags | g2Engine.G2_SEARCH_INCLUDE_STATS
+    # future: use minimal format unless record data requested
+
+    searchFlagList = []
+    searchFlagList.append('G2_SEARCH_INCLUDE_ALL_ENTITIES')
+    searchFlagList.append('G2_SEARCH_INCLUDE_FEATURE_SCORES')
+    searchFlagList.append('G2_ENTITY_INCLUDE_ENTITY_NAME')
+    searchFlagList.append('G2_ENTITY_INCLUDE_RECORD_FORMATTED_DATA')
+    searchFlagList.append('G2_ENTITY_INCLUDE_RECORD_JSON_DATA')
+    searchFlagList.append('G2_SEARCH_INCLUDE_STATS')
+    searchFlagBits = G2EngineFlags.combine_flags(searchFlagList)
 
     thread_list = []
     for thread_id in range(thread_count):
-        thread_list.append(threading.Thread(target=process_search_queue, args=(thread_id, stop_search_threads, search_queue, result_queue, mappingDoc, g2Engine, searchFlags)))
+        thread_list.append(threading.Thread(target=process_search_queue, args=(thread_id, stop_search_threads, search_queue, result_queue, mappingDoc, g2Engine, searchFlagBits)))
     for thread in thread_list:
         thread.start()
     for thread in thread_list:
         thread.join()
     g2Engine.destroy()
 
-#---------------------------------------
+# ---------------------------------------
 def process_search_queue(thread_id, stop_search_threads, search_queue, result_queue, mappingDoc, g2Engine, searchFlags):
     while stop_search_threads.value == 0: 
         queue_data = queue_read(search_queue)
@@ -130,7 +135,7 @@ def process_search_queue(thread_id, stop_search_threads, search_queue, result_qu
                 queue_write(result_queue, result_rows)
     logging.debug('process_search_queue %s shut down with %s left in the queue' % (thread_id, search_queue.qsize()))
 
-#---------------------------------------
+# ---------------------------------------
 def setup_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, statPack):
     try: 
         mappingDoc['output']['fileHandle'] = open(mappingDoc['output']['fileName'], 'w')
@@ -146,13 +151,10 @@ def setup_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, 
 
     process_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, statPack)
 
-    #print('-'*10)
-    #print(json.dumps(statPack, indent = 4))
-    #print('-'*10)
     mgr_statPack.update(statPack)
     mappingDoc['output']['fileHandle'].close()
 
-#---------------------------------------
+# ---------------------------------------
 def process_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, statPack):
     cntr = 0 
     while stop_result_thread.value == 0:
@@ -171,18 +173,19 @@ def process_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc
                 logging.info('interim result: ' + json.dumps(display))
     logging.debug('process_result_queue %s shut down with %s left in the queue' % (thread_id, result_queue.qsize()))
 
-#---------------------------------------
+# ---------------------------------------
 def process_search(rowData, mappingDoc, g2Engine, searchFlags):
 
-    #--clean garbage values
+    # --clean garbage values
     #for key in rowData:
     #    rowData[key] = csv_functions.clean_value(key, rowData[key])
 
-    #--perform calculations
+    # --perform calculations
     mappingErrors = 0
     if 'calculations' in mappingDoc:
         for calcDict in mappingDoc['calculations']:
-            try: newValue = eval(list(calcDict.values())[0])
+            try: 
+                newValue = eval(list(calcDict.values())[0])
             except Exception as err: 
                 logging.debug('%s [%s]' % (list(calcDict.keys())[0], err)) 
                 #mappingErrors += 1
@@ -196,7 +199,8 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
     logging.debug(json.dumps(rowData))
 
     if 'search' in mappingDoc and 'filter' in mappingDoc['search']:
-        try: skipRow = eval(mappingDoc['search']['filter'])
+        try: 
+            skipRow = eval(mappingDoc['search']['filter'])
         except Exception as err: 
             skipRow = False
             logging.debug(' filter error: %s [%s]' % (mappingDoc['search']['filter'], err))
@@ -220,7 +224,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
                 else:
                     rootValues[attrDict['label_attribute']] = attrValue
 
-        #--create the search json
+        # --create the search json
         searchData = {}
         for subList in subListValues:
             searchData[subList] = [subListValues[subList]]
@@ -228,19 +232,19 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         logging.debug(json.dumps(searchData))
         searchStr = json.dumps(searchData)
 
-    else: #--already json or already mapped csv header
+    else: # --already json or already mapped csv header
         searchStr = json.dumps(rowData)
 
     rowData['SEARCH_STRING'] = searchStr
-    #--empty searchResult = '{"SEARCH_RESPONSE": {"RESOLVED_ENTITIES": []}}'???
+    # --empty searchResult = '{"SEARCH_RESPONSE": {"RESOLVED_ENTITIES": []}}'???
     try: 
         response = bytearray()
-        retcode = g2Engine.searchByAttributesV2(searchStr, searchFlags, response)
+        retcode = g2Engine.searchByAttributes(searchStr, response, searchFlags)
         response = response.decode() if response else ''
         #if len(response) > 500:
         #    print(json.dumps(json.loads(response), indent=4))
         #    pause()
-    except G2ModuleException as err:
+    except G2Exception as err:
         logging.error(err)
         with shutDown.get_lock():
             shutDown.value = 1
@@ -251,7 +255,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
     matchList = []
     for resolvedEntity in jsonResponse['RESOLVED_ENTITIES']:
 
-        #--create a list of data sources we found them in
+        # --create a list of data sources we found them in
         dataSources = {}
         for record in resolvedEntity['ENTITY']['RESOLVED_ENTITY']['RECORDS']:
             dataSource = record['DATA_SOURCE']
@@ -267,7 +271,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
             else:
                 dataSourceList.append(dataSource + ': ' + str(len(dataSources[dataSource])) + ' records')
 
-        #--determine the matching criteria
+        # --determine the matching criteria
         matchLevel = int(resolvedEntity['MATCH_INFO']['MATCH_LEVEL'])
         matchLevelCode = resolvedEntity['MATCH_INFO']['MATCH_LEVEL_CODE']
         matchKey = resolvedEntity['MATCH_INFO']['MATCH_KEY'] if resolvedEntity['MATCH_INFO']['MATCH_KEY'] else '' 
@@ -297,7 +301,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
 
         logging.debug(json.dumps(bestScores))
 
-        #--perform scoring (use stored match_score if not overridden in the mapping document)
+        # --perform scoring (use stored match_score if not overridden in the mapping document)
         if 'scoring' not in mappingDoc:
             matchScore = str(((5-resolvedEntity['MATCH_INFO']['MATCH_LEVEL']) * 100) + int(resolvedEntity['MATCH_INFO']['MATCH_SCORE'])) + '-' + str(1000+bestScores['NAME']['score'])[-3:]
         else:
@@ -308,9 +312,9 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
                     if bestScores[featureCode]['score'] >= mappingDoc['scoring'][featureCode]['threshold']:
                         matchScore += int(round(bestScores[featureCode]['score'] * (mappingDoc['scoring'][featureCode]['+weight'] / 100),0))
                     elif '-weight' in mappingDoc['scoring'][featureCode]:
-                        matchScore += -mappingDoc['scoring'][featureCode]['-weight'] #--actual score does not matter if below the threshold
+                        matchScore += -mappingDoc['scoring'][featureCode]['-weight'] # --actual score does not matter if below the threshold
 
-        #--create the possible match entity one-line summary
+        # --create the possible match entity one-line summary
         matchedEntity = {}
         matchedEntity['ENTITY_ID'] = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID']
         if 'ENTITY_NAME' in resolvedEntity['ENTITY']['RESOLVED_ENTITY']:
@@ -329,7 +333,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
 
         matchedEntity['RECORDS'] = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['RECORDS']
 
-        #--check the output filters
+        # --check the output filters
         filteredOut = False
         if matchLevel > mappingDoc['output']['matchLevelFilter']:
             filteredOut = True
@@ -343,7 +347,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         if not filteredOut:
             matchList.append(matchedEntity)
 
-    #--set the no match condition
+    # --set the no match condition
     if len(matchList) == 0:
     #    if requiredFieldsMissing:
     #        rowsSkipped += 1
@@ -375,7 +379,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
 
     return [rowData, result_rows]
 
-#----------------------------------------
+# ----------------------------------------
 def process_result(resultData, mappingDoc, statPack):
     rowData = resultData[0]
     matchList = resultData[1]
@@ -427,7 +431,7 @@ def process_result(resultData, mappingDoc, statPack):
             else:
                 statPack['scoring']['name']['<70'] += 1
 
-        #--get the column values
+        # --get the column values
         #uppercasedJsonData = False
         rowValues = []
         for columnDict in mappingDoc['output']['columns']:
@@ -441,7 +445,7 @@ def process_result(resultData, mappingDoc, statPack):
                 if mappingDoc['input']['fileFormat'].upper() != 'JSON':
                     logging.warning('could not find %s in %s' % (columnDict['value'],columnDict['source'].upper())) 
 
-            #--comes from the records
+            # --comes from the records
             if columnDict['source'].upper() == 'RECORD':
                 #if not uppercasedJsonData:
                 #    record['JSON_DATA'] = dictKeysUpper(record['JSON_DATA'])
@@ -452,8 +456,10 @@ def process_result(resultData, mappingDoc, statPack):
                         for item in record[columnDict['value'].upper()]:
                             columnValues.append(item)
                     else:
-                        try: thisValue = columnDict['value'] % record['JSON_DATA']
-                        except: pass
+                        try: 
+                            thisValue = columnDict['value'] % record['JSON_DATA']
+                        except: 
+                            pass
                         else:
                             if thisValue and thisValue not in columnValues:
                                 columnValues.append(thisValue)
@@ -467,13 +473,13 @@ def process_result(resultData, mappingDoc, statPack):
                 logging.info('column %s truncated at 32k' % columnDict['name'])
             rowValues.append(columnValue.replace('\n', '|'))
                     
-        #--write the record
+        # --write the record
         if mappingDoc['output']['fileFormat'] != 'JSON':
             mappingDoc['output']['fileWriter'].writerow(rowValues)
         else:
             mappingDoc['output']['fileHandle'].write(json.dumps(rowValues) + '\n')
     
-        #--update the counters
+        # --update the counters
         if matchedEntity['MATCH_LEVEL'] != 0:
             statPack['resolution'][level]['total'] += 1
         if matchedEntity['MATCH_LEVEL'] == 1:
@@ -487,10 +493,10 @@ def process_result(resultData, mappingDoc, statPack):
 
     return statPack
 
-#----------------------------------------
+# ----------------------------------------
 def processFile(mappingDoc):
     
-    #--initialize the stats
+    # --initialize the stats
     statPack = {}
     statPack['resolution'] = {}
     statPack['resolution']['best'] = {}
@@ -540,7 +546,7 @@ def processFile(mappingDoc):
     statPack['summary']['search_count'] = 0
     statPack['summary']['match_count'] = 0
 
-    #--upper case value replacements
+    # --upper case value replacements
     if 'columnHeaders' in mappingDoc['input']:
         mappingDoc['input']['columnHeaders'] = [x.upper() for x in mappingDoc['input']['columnHeaders']]
 
@@ -551,7 +557,7 @@ def processFile(mappingDoc):
     for ii in range(len(mappingDoc['output']['columns'])):
         mappingDoc['output']['columns'][ii]['value'] = mappingDoc['output']['columns'][ii]['value'].upper().replace(')S', ')s')
 
-    #--build output headers
+    # --build output headers
     recordDataRequested = False
     outputHeaders = []
     for ii in range(len(mappingDoc['output']['columns'])):
@@ -605,11 +611,11 @@ def processFile(mappingDoc):
     for process in search_process_list:
         process.start()
 
-    #--final thread processes the result 
+    # --final thread processes the result 
     result_process = Process(target=setup_result_queue, args=(999, stop_result_thread, result_queue, mappingDoc, statPack))
     result_process.start()
 
-    #--upper case value replacements
+    # --upper case value replacements
     #for ii in range(len(mappingDoc['search']['attributes'])):
     #    mappingDoc['search']['attributes'][ii]['value'] = mappingDoc['search']['attributes'][ii]['value'].upper().replace(')S', ')s')
     #for ii in range(len(mappingDoc['output']['columns'])):
@@ -627,7 +633,7 @@ def processFile(mappingDoc):
     unmappedList = []
     ignoredList = []
 
-    #--ensure uniqueness of attributes, especially if using labels (usage types)
+    # --ensure uniqueness of attributes, especially if using labels (usage types)
     errorCnt = 0
     labelAttrList = []
 
@@ -655,7 +661,7 @@ def processFile(mappingDoc):
         if errorCnt:
             return -1
 
-    #--override mapping document with parameters
+    # --override mapping document with parameters
     #if fieldDelimiter or 'fieldDelimiter' not in mappingDoc['input']:
     #    mappingDoc['input']['fieldDelimiter'] = fieldDelimiter
     #if fileEncoding or 'fileEncoding' not in mappingDoc['input']:
@@ -663,13 +669,13 @@ def processFile(mappingDoc):
     if 'columnHeaders' not in mappingDoc['input']:
         mappingDoc['input']['columnHeaders'] = []
 
-    #--get the file format
+    # --get the file format
     if 'fileFormat' not in mappingDoc['input']:
         mappingDoc['input']['fileFormat'] = 'CSV'
     else:
         mappingDoc['input']['fileFormat'] = mappingDoc['input']['fileFormat'].upper()
 
-    #--for each input file
+    # --for each input file
     totalRowCnt = 0
     for fileName in fileList:
         logging.info('Processing %s ...' % fileName)
@@ -679,14 +685,14 @@ def processFile(mappingDoc):
         currentFile['rowCnt'] = 0
         currentFile['skipCnt'] = 0
 
-        #--open the file
+        # --open the file
         if 'fileEncoding' in mappingDoc['input'] and mappingDoc['input']['fileEncoding']:
             currentFile['fileEncoding'] = mappingDoc['input']['fileEncoding']
             currentFile['handle'] = open(fileName, 'r', encoding=mappingDoc['input']['fileEncoding'])
         else:
             currentFile['handle'] = open(fileName, 'r')
 
-        #--set the current file details
+        # --set the current file details
         currentFile['fileFormat'] = mappingDoc['input']['fileFormat']
         if currentFile['fileFormat'] == 'JSON':
             currentFile['csvDialect'] = 'n/a'
@@ -713,13 +719,13 @@ def processFile(mappingDoc):
             else:
                 currentFile['csvDialect'] = 'excel'
 
-            #--set the reader (csv cannot be used for multi-char delimiters)
+            # --set the reader (csv cannot be used for multi-char delimiters)
             if currentFile['csvDialect'] != 'multi':
                 currentFile['reader'] = csv.reader(currentFile['handle'], dialect=currentFile['csvDialect'])
             else:
                 currentFile['reader'] = currentFile['handle']
 
-            #--get the current file header row and use it if not one already
+            # --get the current file header row and use it if not one already
             currentFile, currentHeaders = getNextRow(currentFile)
             if not mappingDoc['input']['columnHeaders']:
                 mappingDoc['input']['columnHeaders'] = [x.upper() for x in currentHeaders]
@@ -736,7 +742,7 @@ def processFile(mappingDoc):
             if totalRowCnt % progressInterval == 0 or not rowData:
                 logging.info(f'{totalRowCnt} rows read')
 
-            #--break conditions
+            # --break conditions
             if (not rowData) or shutDown.value:
                 break
 
@@ -744,7 +750,7 @@ def processFile(mappingDoc):
         if shutDown.value:
             break
 
-    #--finish the search queues
+    # --finish the search queues
     logging.info('Finishing up ...')
     queuesEmpty = wait_for_queue('search_queue', search_queue)
     with stop_search_threads.get_lock():
@@ -764,7 +770,7 @@ def processFile(mappingDoc):
             process.join()
     search_queue.close() 
 
-    #--finish the result queues
+    # --finish the result queues
     queuesEmpty = wait_for_queue('result_queue', result_queue)
     with stop_result_thread.get_lock():
         stop_result_thread.value = 1
@@ -780,7 +786,7 @@ def processFile(mappingDoc):
         result_process.join()
     result_queue.close() 
 
-    #--bring in and finalize the statPack from the result queue process
+    # --bring in and finalize the statPack from the result queue process
     statPack = dict(mgr_statPack)
     if statPack['summary']['search_count'] > 0:
         statPack['summary']['match_percent'] = str(round(((float(statPack['summary']['match_count']) / float(statPack['summary']['search_count'])) * 100.00), 2)) + '%'
@@ -802,20 +808,21 @@ def processFile(mappingDoc):
 
     return 
 
-#----------------------------------------
+# ----------------------------------------
 def getNextRow(fileInfo):
     errCnt = 0
     rowData = None
     while not rowData:
 
-        #--quit for consecutive errors
+        # --quit for consecutive errors
         if errCnt >= 10:
             logging.error('Shutdown due to too many errors')
             with shutDown.get_lock():
                 shutDown.value = 1
             break
              
-        try: line = next(fileInfo['reader'])
+        try: 
+            line = next(fileInfo['reader'])
         except StopIteration:
             break
         except: 
@@ -824,28 +831,28 @@ def getNextRow(fileInfo):
             errCnt += 1
             continue
         fileInfo['rowCnt'] += 1
-        if line: #--skip empty lines
+        if line: # --skip empty lines
 
             if fileInfo['fileFormat'] == 'JSON':
                 return fileInfo, json.loads(line)
 
-            #--csv reader will return a list (mult-char delimiter must be manually split)
+            # --csv reader will return a list (mult-char delimiter must be manually split)
             if type(line) == list:
                 row = line
             else:
                 row = [removeQuoteChar(x.strip()) for x in line.split(fileInfo['delimiter'])]
 
-            #--turn into a dictionary if there is a header
+            # --turn into a dictionary if there is a header
             if 'header' in fileInfo:
 
-                #--column mismatch
+                # --column mismatch
                 if len(row) != len(fileInfo['header']):
                     logging.warning(' row %s has %s columns, expected %s' % (fileInfo['rowCnt'], len(row), len(fileInfo['header'])))
                     fileInfo['skipCnt'] += 1
                     errCnt += 1
                     continue
 
-                #--is it the header row
+                # --is it the header row
                 elif str(row[0]).upper() == fileInfo['header'][0].upper() and str(row[len(row)-1]).upper() == fileInfo['header'][len(fileInfo['header'])-1].upper():
                     fileInfo['skipCnt'] += 1
                     if fileInfo['rowCnt'] != 1:
@@ -853,11 +860,11 @@ def getNextRow(fileInfo):
                         errCnt += 1
                     continue
 
-                #--return a good row
+                # --return a good row
                 else:
                     rowData = dict(zip(fileInfo['header'], [str(x).strip() for x in row]))
 
-            else: #--if not just return what should be the header row
+            else: # --if not just return what should be the header row
                 fileInfo['skipCnt'] += 1
                 rowData = [str(x).strip() for x in row]
 
@@ -868,38 +875,40 @@ def getNextRow(fileInfo):
 
     return fileInfo, rowData
 
-#----------------------------------------
+# ----------------------------------------
 def removeQuoteChar(s):
     if len(s)>2 and s[0] + s[-1] in ("''", '""'):
         return s[1:-1] 
     return s 
 
-#----------------------------------------
+# ----------------------------------------
 def getValue(rowData, expression):
-    try: rtnValue = expression % rowData
+    try: 
+        rtnValue = expression % rowData
     except: 
         logging.warning('could not map %s' % (expression,)) 
         rtnValue = ''
     return rtnValue
     
-#----------------------------------------
+# ----------------------------------------
 def pause(question='PRESS ENTER TO CONTINUE ...'):
     """ pause for debug purposes """
-    try: response = input(question)
+    try: 
+        response = input(question)
     except KeyboardInterrupt:
         response = None
         with shutDown.get_lock():
             shutDown.value = 9
     return response
 
-#----------------------------------------
+# ----------------------------------------
 def signal_handler(signal, frame):
     logging.warning('USER INTERUPT! Shutting down ... (please wait)')
     with shutDown.get_lock():
         shutDown.value = 9
     return
 
-#----------------------------------------
+# ----------------------------------------
 if __name__ == "__main__":
     appPath = os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -911,15 +920,15 @@ if __name__ == "__main__":
     mgr = Manager()
     mgr_statPack = mgr.dict()
        
-    try: iniFileName = G2Paths.get_G2Module_ini_path()
-    except: iniFileName = '' 
+    try: 
+        iniFileName = G2Paths.get_G2Module_ini_path()
+    except: 
+        iniFileName = '' 
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=iniFileName, help='name of the g2.ini file, defaults to %s' % iniFileName)
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
     parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of an input file')
-    parser.add_argument('-d', '--delimiterChar', dest='delimiterChar', help='delimiter character')
-    parser.add_argument('-e', '--fileEncoding', dest='fileEncoding', help='file encoding')
     parser.add_argument('-o', '--outputFileName', dest='outputFileName', help='the name of the output file')
     parser.add_argument('-l', '--log_file', dest='logFileName', help='optional statistics filename (json format)')
     parser.add_argument('-nt', '--thread_count', type=int, default=0, help='number of threads to start')
@@ -929,8 +938,6 @@ if __name__ == "__main__":
     ini_file_name = args.ini_file_name
     mappingFileName = args.mappingFileName
     inputFileName = args.inputFileName
-    delimiterChar = args.delimiterChar
-    fileEncoding = args.fileEncoding
     outputFileName = args.outputFileName
     logFileName = args.logFileName
     threadCount = args.thread_count
@@ -938,46 +945,58 @@ if __name__ == "__main__":
     loggingLevel = logging.DEBUG if args.debugOn else logging.INFO
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%m/%d %I:%M', level=loggingLevel)
 
-    #--read the mapping file
-    if not os.path.exists(mappingFileName):
-        logging.error(f'\n{mappingFileName} does not exist')
-        sys.exit(1)
-    try: mappingDoc = json.load(open(mappingFileName, 'r'))
-    except ValueError as err:
-        logging.error(f'\nmapping file error: {err} in{mappingFileName}')
+    # --get the version information
+    try:
+        g2Product = G2Product()
+        apiVersion = json.loads(g2Product.version())
+        if apiVersion['VERSION'][0:1] < '3':
+            logging.error(f'This program requires Senzing API version 3.0 or higher')
+            sys.exit(1)
+    except G2Exception as err:
+        print(err)
         sys.exit(1)
 
-    #--get the input file
+    # --read the mapping file
+    if not os.path.exists(mappingFileName):
+        logging.error(f'{mappingFileName} does not exist')
+        sys.exit(1)
+    try: 
+        mappingDoc = json.load(open(mappingFileName, 'r'))
+    except ValueError as err:
+        logging.error(f'mapping file error: {err} in{mappingFileName}')
+        sys.exit(1)
+
+    # --get the input file
     if inputFileName or 'inputFileName' not in mappingDoc['input']:
         mappingDoc['input']['inputFileName'] = inputFileName
     if not mappingDoc['input']['inputFileName']:
-        logging.error('\nno input file supplied')
+        logging.error('no input file supplied')
         sys.exit(1)
     fileList = glob.glob(mappingDoc['input']['inputFileName'])
     if len(fileList) == 0:
-        logging.error(f'\n{inputFileName} not found')
+        logging.error(f'{inputFileName} not found')
         sys.exit(1)
 
-    #--get the output file name
+    # --get the output file name
     if outputFileName:
         mappingDoc['output']['fileName'] = outputFileName
     if 'fileName' not in mappingDoc['output']:
-        logging.error('\nan ouput file name is required')
+        logging.error('an ouput file name is required')
         sys.exit(1)
 
-    #--get the ini file parameters
+    # --get the ini file parameters
     try:
         iniParamCreator = G2IniParams()
         iniParams = iniParamCreator.getJsonINIParams(iniFileName)
     except G2Exception as err:
-        logging.error('%s' % str(err))
+        logging.error(str(err))
         sys.exit(1)
 
-    #--determine the number of threads to use
+    # --determine the number of threads to use
     if threadCount == 0:
         try:
             g2Diag = G2Diagnostic()
-            g2Diag.initV2('pyG2Diagnostic', iniParams, False)
+            g2Diag.init('pyG2Diagnostic', iniParams, False)
             physical_cores = g2Diag.getPhysicalCores()
             logical_cores = g2Diag.getLogicalCores()
             calc_cores_factor = 2 if physical_cores != logical_cores else 1.2

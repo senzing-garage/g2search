@@ -22,10 +22,6 @@ optional arguments:
                         the name of a mapping file
   -i INPUTFILENAME, --inputFileName INPUTFILENAME
                         the name of an input file
-  -d DELIMITERCHAR, --delimiterChar DELIMITERCHAR
-                        delimiter character
-  -e FILEENCODING, --fileEncoding FILEENCODING
-                        file encoding
   -o OUTPUTFILENAME, --outputFileName OUTPUTFILENAME
                         the name of the output file
   -l LOGFILENAME, --log_file LOGFILENAME
@@ -44,7 +40,7 @@ optional arguments:
 
 ### Prerequisites
 - Python 3.6 or higher
-- Senzing API version 2.00 or higher
+- Senzing API version 3.00 or higher
 
 *If using an SSHD container, you should first max it out with at least 4 processors and 30g of ram as the more threads 
 you give it, the faster it will run.  Also, if the database container is not set to auto-scale, you should give it  
