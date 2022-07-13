@@ -17,20 +17,30 @@ from queue import Empty, Full
 import threading
 import math
 
-# senzing python classes
+# Import from Senzing
 try:
     import G2Paths
-    from senzing import G2ConfigMgr, G2Diagnostic, G2Engine, G2EngineFlags, G2Exception, G2IniParams, G2Product
-except:
+    try:
+        from G2IniParams import G2IniParams
+        from senzing import G2ConfigMgr, G2Diagnostic, G2Engine, G2EngineFlags, G2Exception, G2Product
+    except:
+        from senzing import G2ConfigMgr, G2Diagnostic, G2Engine, G2EngineFlags, G2Exception, G2Product, G2IniParams
+except Exception as err:
 
     # Fall back to pre-Senzing-Python-SDK style of imports.
     try:
         import G2Paths
+        from G2IniParams import G2IniParams
         from G2Product import G2Product
+        from G2Config import G2Config
+        from G2ConfigMgr import G2ConfigMgr
+        from G2Diagnostic import G2Diagnostic
+        from G2Engine import G2Engine
         from G2Exception import G2Exception
     except:
-        print('\nPlease export PYTHONPATH=<path to senzing python directory>\n')
+        print(f"\nCould not import Senzing modules:\n{err}\n")
         sys.exit(1)
+
 
 # ---------------------------------------
 def queue_read(queue): 
