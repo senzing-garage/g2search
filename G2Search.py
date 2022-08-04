@@ -994,7 +994,7 @@ if __name__ == "__main__":
         elif os.getenv("SENZING_ENGINE_CONFIGURATION_JSON"):
             iniParams = os.getenv("SENZING_ENGINE_CONFIGURATION_JSON")
         else:
-            iniParams = pathlib.Path(G2Paths.get_G2Module_ini_path())
+            iniFileName = pathlib.Path(G2Paths.get_G2Module_ini_path())
 
         if iniFileName:
             G2Paths.check_file_exists_and_readable(iniFileName)
