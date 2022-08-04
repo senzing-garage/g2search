@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import os
+import pathlib
 import sys
 import argparse
 import configparser
@@ -16,8 +17,8 @@ from multiprocessing import Process, Queue, Value, Manager
 from queue import Empty, Full
 import threading
 import math
-
 # Import from Senzing
+
 try:
     import G2Paths
     try:
@@ -926,7 +927,7 @@ if __name__ == "__main__":
         iniFileName = '' 
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=iniFileName, help='name of the g2.ini file, defaults to %s' % iniFileName)
+    parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=None, help='name of the g2.ini file, defaults to %s' % iniFileName)
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
     parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of an input file')
     parser.add_argument('-o', '--outputFileName', dest='outputFileName', help='the name of the output file')
@@ -935,7 +936,6 @@ if __name__ == "__main__":
     parser.add_argument('-mtp', '--maxThreadsPerProcess', dest='max_threads_per_process', default=16, type=int, help='maximum threads per process, default=%(default)s')
     parser.add_argument('-D', '--debugOn', dest='debugOn', action='store_true', default=False, help='run in debug mode')
     args = parser.parse_args()
-    ini_file_name = args.ini_file_name
     mappingFileName = args.mappingFileName
     inputFileName = args.inputFileName
     outputFileName = args.outputFileName
@@ -986,8 +986,21 @@ if __name__ == "__main__":
 
     # --get the ini file parameters
     try:
-        iniParamCreator = G2IniParams()
-        iniParams = iniParamCreator.getJsonINIParams(iniFileName)
+    #Check if INI file or env var is specified, otherwise use default INI file
+        iniFileName = None
+
+        if args.ini_file_name:
+            iniFileName = pathlib.Path(args.ini_file_name)
+        elif os.getenv("SENZING_ENGINE_CONFIGURATION_JSON"):
+            iniParams = os.getenv("SENZING_ENGINE_CONFIGURATION_JSON")
+        else:
+            iniFileName = pathlib.Path(G2Paths.get_G2Module_ini_path())
+
+        if iniFileName:
+            G2Paths.check_file_exists_and_readable(iniFileName)
+            iniParamCreator = G2IniParams()
+            iniParams = iniParamCreator.getJsonINIParams(iniFileName)
+
     except G2Exception as err:
         logging.error(str(err))
         sys.exit(1)
