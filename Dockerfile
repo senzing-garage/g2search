@@ -1,7 +1,7 @@
-ARG BASE_IMAGE=debian:11.2-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7de5be5587ec8ce7b9b50f9c
+ARG BASE_IMAGE=senzing/senzingapi-tools:3.2.0
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2022-02-16
+ENV REFRESHED_AT=2022-08-25
 
 LABEL Name="senzing/g2search" \
       Maintainer="support@senzing.com" \
