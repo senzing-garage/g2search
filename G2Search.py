@@ -923,11 +923,6 @@ if __name__ == "__main__":
     mgr = Manager()
     mgr_statPack = mgr.dict()
 
-
-
-
-
-
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=None, help='Path and name of optional G2Module.ini file to use.')
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
@@ -1001,9 +996,6 @@ if __name__ == "__main__":
         G2Paths.check_file_exists_and_readable(iniFileName)
         iniParamCreator = G2IniParams()
         iniParams = iniParamCreator.getJsonINIParams(iniFileName)
-
-
-
 
     # --determine the number of threads to use
     if threadCount == 0:
