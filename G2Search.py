@@ -17,6 +17,7 @@ from multiprocessing import Process, Queue, Value, Manager
 from queue import Empty, Full
 import threading
 import math
+
 # Import from Senzing
 
 try:
@@ -327,7 +328,8 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         matchedEntity['MATCH_LEVEL_CODE'] = matchLevelCode
         matchedEntity['MATCH_KEY'] = matchKey[1:]
         matchedEntity['MATCH_SCORE'] = matchScore
-        matchedEntity['NAME_SCORE'] = bestScores['NAME']['score']
+        matchedEntity['NAME_SCORE'] = bestScores['NAME']['score'] if 'NAME' in bestScores else 0
+        matchedEntity['ADDRESS_SCORE'] = bestScores['ADDRESS']['score'] if 'ADDRESS' in bestScores else 0
         matchedEntity['SCORE_DATA'] = json.dumps(bestScores)  #'\n'.join(sorted(map(str, scoreData)))
 
         logging.debug(json.dumps(matchedEntity))
@@ -931,6 +933,7 @@ if __name__ == "__main__":
     parser.add_argument('-mtp', '--maxThreadsPerProcess', dest='max_threads_per_process', default=16, type=int, help='maximum threads per process, default=%(default)s')
     parser.add_argument('-D', '--debugOn', dest='debugOn', action='store_true', default=False, help='run in debug mode')
     args = parser.parse_args()
+
     mappingFileName = args.mappingFileName
     inputFileName = args.inputFileName
     outputFileName = args.outputFileName
@@ -1017,3 +1020,4 @@ if __name__ == "__main__":
         logging.warning(f'Process aborted after {elapsedMins} minutes!\n')
 
     sys.exit(shutDown.value)
+
