@@ -1020,4 +1020,3 @@ if __name__ == "__main__":
         logging.warning(f'Process aborted after {elapsedMins} minutes!\n')
 
     sys.exit(shutDown.value)
-
