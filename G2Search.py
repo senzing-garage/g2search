@@ -45,17 +45,17 @@ except Exception as err:
 
 
 # ---------------------------------------
-def queue_read(queue): 
-    try: 
+def queue_read(queue):
+    try:
         return queue.get(True, 1)
     except Empty:
         time.sleep(.1)
         return None
 
 # ---------------------------------------
-def queue_write(queue, message): 
+def queue_write(queue, message):
     while True:
-        try: 
+        try:
             queue.put(message, True, 1)
         except Full:
             time.sleep(.01)
@@ -86,7 +86,7 @@ def wait_for_queue(qname, q):
         time.sleep(5)
         waits += 1
         # --disabled in favor of control-c shutDown
-        if False: #waits >= 10:  
+        if False: #waits >= 10:
             break
         elif q.qsize():
             logging.info(f'waiting for {q.qsize()} {qname} records')
@@ -97,7 +97,7 @@ def wait_for_queue(qname, q):
 
 # ---------------------------------------
 def setup_search_queue(thread_count, stop_search_threads, search_queue, result_queue, mappingDoc):
-    try: 
+    try:
         g2Engine = G2Engine()
         g2Engine.init('G2Search', iniParams, False)
     except G2Exception as ex:
@@ -128,10 +128,10 @@ def setup_search_queue(thread_count, stop_search_threads, search_queue, result_q
 
 # ---------------------------------------
 def process_search_queue(thread_id, stop_search_threads, search_queue, result_queue, mappingDoc, g2Engine, searchFlags):
-    while stop_search_threads.value == 0: 
+    while stop_search_threads.value == 0:
         queue_data = queue_read(search_queue)
         if queue_data:
-            logging.debug('read search_queue: ' + str(queue_data)[0:50])  
+            logging.debug('read search_queue: ' + str(queue_data)[0:50])
             result_rows = process_search(queue_data, mappingDoc, g2Engine, searchFlags)
             if result_rows:
                 queue_write(result_queue, result_rows)
@@ -139,9 +139,9 @@ def process_search_queue(thread_id, stop_search_threads, search_queue, result_qu
 
 # ---------------------------------------
 def setup_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, statPack):
-    try: 
+    try:
         mappingDoc['output']['fileHandle'] = open(mappingDoc['output']['fileName'], 'w')
-    except IOError as err: 
+    except IOError as err:
         logging.error('Cannot write to %s: %s' % (mappingDoc['output']['fileName'], err))
         with shutDown.get_lock():
             shutDown.value = 1
@@ -158,11 +158,11 @@ def setup_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, 
 
 # ---------------------------------------
 def process_result_queue(thread_id, stop_result_thread, result_queue, mappingDoc, statPack):
-    cntr = 0 
+    cntr = 0
     while stop_result_thread.value == 0:
         queue_data = queue_read(result_queue)
         if queue_data:
-            logging.debug('read result_queue: ' + str(queue_data)[0:50])  
+            logging.debug('read result_queue: ' + str(queue_data)[0:50])
             statPack = process_result(queue_data, mappingDoc, statPack)
             cntr += 1
             if cntr % progressInterval == 0:
@@ -186,10 +186,10 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
     mappingErrors = 0
     if 'calculations' in mappingDoc:
         for calcDict in mappingDoc['calculations']:
-            try: 
+            try:
                 newValue = eval(list(calcDict.values())[0])
-            except Exception as err: 
-                logging.debug('%s [%s]' % (list(calcDict.keys())[0], err)) 
+            except Exception as err:
+                logging.debug('%s [%s]' % (list(calcDict.keys())[0], err))
                 #mappingErrors += 1
             else:
                 if type(newValue) == list:
@@ -201,9 +201,9 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
     logging.debug(json.dumps(rowData))
 
     if 'search' in mappingDoc and 'filter' in mappingDoc['search']:
-        try: 
+        try:
             skipRow = eval(mappingDoc['search']['filter'])
-        except Exception as err: 
+        except Exception as err:
             skipRow = False
             logging.debug(' filter error: %s [%s]' % (mappingDoc['search']['filter'], err))
         if skipRow:
@@ -239,7 +239,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
 
     rowData['SEARCH_STRING'] = searchStr
     # --empty searchResult = '{"SEARCH_RESPONSE": {"RESOLVED_ENTITIES": []}}'???
-    try: 
+    try:
         response = bytearray()
         retcode = g2Engine.searchByAttributes(searchStr, response, searchFlags)
         response = response.decode() if response else ''
@@ -276,7 +276,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         # --determine the matching criteria
         matchLevel = int(resolvedEntity['MATCH_INFO']['MATCH_LEVEL'])
         matchLevelCode = resolvedEntity['MATCH_INFO']['MATCH_LEVEL_CODE']
-        matchKey = resolvedEntity['MATCH_INFO']['MATCH_KEY'] if resolvedEntity['MATCH_INFO']['MATCH_KEY'] else '' 
+        matchKey = resolvedEntity['MATCH_INFO']['MATCH_KEY'] if resolvedEntity['MATCH_INFO']['MATCH_KEY'] else ''
         matchKey = matchKey.replace('+RECORD_TYPE', '')
 
         scoreData = []
@@ -287,7 +287,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         for featureCode in resolvedEntity['MATCH_INFO']['FEATURE_SCORES']:
             if featureCode == 'NAME':
                 scoreCode = 'GNR_FN'
-            else: 
+            else:
                 scoreCode = 'FULL_SCORE'
             for scoreRecord in resolvedEntity['MATCH_INFO']['FEATURE_SCORES'][featureCode]:
                 matchingScore= scoreRecord[scoreCode]
@@ -370,7 +370,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         matchedEntity['RECORDS'] = []
         matchList.append(matchedEntity)
         logging.debug('** no matches found **')
-        
+
     result_rows = []
     matchNumber = 0
     for matchedEntity in sorted(matchList, key=lambda x: x['MATCH_SCORE'], reverse=True):
@@ -388,9 +388,9 @@ def process_result(resultData, mappingDoc, statPack):
     matchList = resultData[1]
     statPack['summary']['search_count'] += 1
     for matchedEntity in matchList:
-        if matchedEntity['MATCH_NUMBER'] == 1: 
+        if matchedEntity['MATCH_NUMBER'] == 1:
             statPack['summary']['match_count'] += 1
-            level = 'best' 
+            level = 'best'
         else:
             level = 'additional'
 
@@ -439,14 +439,14 @@ def process_result(resultData, mappingDoc, statPack):
         rowValues = []
         for columnDict in mappingDoc['output']['columns']:
             columnValue = ''
-            try: 
+            try:
                 if columnDict['source'].upper() in ('CSV', 'INPUT'):
                     columnValue = columnDict['value'] % rowData
                 elif columnDict['source'].upper() == 'API':
                     columnValue = columnDict['value'] % matchedEntity
             except:
                 if mappingDoc['input']['fileFormat'].upper() != 'JSON':
-                    logging.warning('could not find %s in %s' % (columnDict['value'],columnDict['source'].upper())) 
+                    logging.warning('could not find %s in %s' % (columnDict['value'],columnDict['source'].upper()))
 
             # --comes from the records
             if columnDict['source'].upper() == 'RECORD':
@@ -459,9 +459,9 @@ def process_result(resultData, mappingDoc, statPack):
                         for item in record[columnDict['value'].upper()]:
                             columnValues.append(item)
                     else:
-                        try: 
+                        try:
                             thisValue = columnDict['value'] % record['JSON_DATA']
-                        except: 
+                        except:
                             pass
                         else:
                             if thisValue and thisValue not in columnValues:
@@ -475,13 +475,13 @@ def process_result(resultData, mappingDoc, statPack):
                 columnValue = columnValue[0:32000]
                 logging.info('column %s truncated at 32k' % columnDict['name'])
             rowValues.append(columnValue.replace('\n', '|'))
-                    
+
         # --write the record
         if mappingDoc['output']['fileFormat'] != 'JSON':
             mappingDoc['output']['fileWriter'].writerow(rowValues)
         else:
             mappingDoc['output']['fileHandle'].write(json.dumps(rowValues) + '\n')
-    
+
         # --update the counters
         if matchedEntity['MATCH_LEVEL'] != 0:
             statPack['resolution'][level]['total'] += 1
@@ -498,7 +498,7 @@ def process_result(resultData, mappingDoc, statPack):
 
 # ----------------------------------------
 def processFile(mappingDoc):
-    
+
     # --initialize the stats
     statPack = {}
     statPack['resolution'] = {}
@@ -594,7 +594,7 @@ def processFile(mappingDoc):
         mappingDoc['output']['maxReturnCount'] = 1
     else:
         mappingDoc['output']['maxReturnCount'] = int(mappingDoc['output']['maxReturnCount'])
-       
+
     logging.info(f'starting {threadCount} threads ...')
     stop_search_threads = Value('i', 0)
     search_queue = Queue(threadCount * 100)
@@ -614,7 +614,7 @@ def processFile(mappingDoc):
     for process in search_process_list:
         process.start()
 
-    # --final thread processes the result 
+    # --final thread processes the result
     result_process = Process(target=setup_result_queue, args=(999, stop_result_thread, result_queue, mappingDoc, statPack))
     result_process.start()
 
@@ -771,7 +771,7 @@ def processFile(mappingDoc):
             process.terminate()
         else:
             process.join()
-    search_queue.close() 
+    search_queue.close()
 
     # --finish the result queues
     queuesEmpty = wait_for_queue('result_queue', result_queue)
@@ -787,7 +787,7 @@ def processFile(mappingDoc):
         result_process.terminate()
     else:
         result_process.join()
-    result_queue.close() 
+    result_queue.close()
 
     # --bring in and finalize the statPack from the result queue process
     statPack = dict(mgr_statPack)
@@ -802,14 +802,14 @@ def processFile(mappingDoc):
         logging.info('final result: ' + json.dumps(display))
         if logFileName:
             with open(logFileName, 'w') as outfile:
-                json.dump(statPack, outfile, indent=4)    
+                json.dump(statPack, outfile, indent=4)
 
     record_count = statPack['summary']['search_count']
     elapsedMins = round((time.time() - procStartTime) / 60, 1)
     eps = int(float(record_count) / (float(time.time() - procStartTime if time.time() - procStartTime != 0 else 1)))
     logging.info(f'{record_count} records processed in {elapsedMins} minutes = {eps} records per second')
 
-    return 
+    return
 
 # ----------------------------------------
 def getNextRow(fileInfo):
@@ -823,12 +823,12 @@ def getNextRow(fileInfo):
             with shutDown.get_lock():
                 shutDown.value = 1
             break
-             
-        try: 
+
+        try:
             line = next(fileInfo['reader'])
         except StopIteration:
             break
-        except: 
+        except:
             logging.warning(' row %s: %s' % (fileInfo['rowCnt'], sys.exc_info()[0]))
             fileInfo['skipCnt'] += 1
             errCnt += 1
@@ -881,22 +881,22 @@ def getNextRow(fileInfo):
 # ----------------------------------------
 def removeQuoteChar(s):
     if len(s)>2 and s[0] + s[-1] in ("''", '""'):
-        return s[1:-1] 
-    return s 
+        return s[1:-1]
+    return s
 
 # ----------------------------------------
 def getValue(rowData, expression):
-    try: 
+    try:
         rtnValue = expression % rowData
-    except: 
-        logging.warning('could not map %s' % (expression,)) 
+    except:
+        logging.warning('could not map %s' % (expression,))
         rtnValue = ''
     return rtnValue
-    
+
 # ----------------------------------------
 def pause(question='PRESS ENTER TO CONTINUE ...'):
     """ pause for debug purposes """
-    try: 
+    try:
         response = input(question)
     except KeyboardInterrupt:
         response = None
@@ -958,7 +958,7 @@ if __name__ == "__main__":
     if not os.path.exists(mappingFileName):
         logging.error(f'{mappingFileName} does not exist')
         sys.exit(1)
-    try: 
+    try:
         mappingDoc = json.load(open(mappingFileName, 'r'))
     except ValueError as err:
         logging.error(f'mapping file error: {err} in{mappingFileName}')
@@ -1020,4 +1020,3 @@ if __name__ == "__main__":
         logging.warning(f'Process aborted after {elapsedMins} minutes!\n')
 
     sys.exit(shutDown.value)
-
