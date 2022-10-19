@@ -99,6 +99,8 @@ as indicated by the "source" attribute.
 - input: This is helpful so that you can quickly see what record was searched for.  
 You can specify any of the following ...
     - ROW_ID: the row number in the json file
+    - SEARCH_ENTITY_ID: the entity_id assigned to the search record if the search record was actually loaded
+      *Note: some implementations involve a load and then a search to see what else it may have hit that didn't create a relationship.*
     - SEARCH_STRING: the entire json search record
     - Any root level attribute from the search record such a "PRIARY_ORG_NAME"
 
@@ -109,7 +111,7 @@ You can specify any of the following ...
     - MATCH_KEY: NAME+ADDRESS, etc
     - MATCH_SCORE: the weighted overall score for the entity
     - NAME_SCORE: just the best matching name score for the entity
-    - ENTITY_ID:
+    - ENTITY_ID: the entity_id for the matched entity
     - ENTITY_NAME: the best name for the entity
     - ENTITY_SOURCES: what data sources the entity came from 
     - SCORE_DATA: all of the score data
