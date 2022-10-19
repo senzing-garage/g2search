@@ -256,6 +256,8 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         except:
             pass
 
+    search_entity_id = None
+
     # --empty searchResult = '{"SEARCH_RESPONSE": {"RESOLVED_ENTITIES": []}}'???
     try: 
         response = bytearray()
@@ -286,6 +288,11 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
                 dataSources[dataSource] = [record['RECORD_ID']]
             else:
                 dataSources[dataSource].append(record['RECORD_ID'])
+
+        # determine if the incoming record is in this entity
+        if rowData.get('DATA_SOURCE') and rowData.get('RECORD_ID'):
+            if rowData['RECORD_ID'] in dataSources.get(rowData['DATA_SOURCE'],[]):
+                search_entity_id = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID']
 
         dataSourceList = []
         for dataSource in dataSources:
@@ -337,6 +344,10 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
                     elif '-weight' in mappingDoc['scoring'][featureCode]:
                         matchScore += -mappingDoc['scoring'][featureCode]['-weight'] # --actual score does not matter if below the threshold
 
+        # add to score if this is the resolved entity
+        if resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID'] == search_entity_id:
+            matchScore = matchScore + 100
+
         # --create the possible match entity one-line summary
         matchedEntity = {}
         matchedEntity['ENTITY_ID'] = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID']
@@ -358,6 +369,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         matchedEntity['RECORDS'] = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['RECORDS']
 
         # --check the output filters
+        matchedEntity['FILTERED_SOURCE'] = ''
         filteredOut = False
         if matchLevel > mappingDoc['output']['matchLevelFilter']:
             filteredOut = True
@@ -365,11 +377,30 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         if bestScores['NAME']['score'] < mappingDoc['output']['nameScoreFilter']:
             filteredOut = True
             logging.debug('** did not meet nameScoreFilter **')
-        if mappingDoc['output']['dataSourceFilter'] and mappingDoc['output']['dataSourceFilter'] not in dataSources:
-            filteredOut = True
+        if mappingDoc['output']['dataSourceFilter']:
+            if mappingDoc['output']['dataSourceFilter'] not in dataSources:
+                filteredOut = True
+            else:
+                dataSource = mappingDoc['output']['dataSourceFilter']
+                if len(dataSources[dataSource]) == 1:
+                    matchedEntity['FILTERED_SOURCE'] = dataSource + ': ' + dataSources[dataSource][0]
+                else:
+                    matchedEntity['FILTERED_SOURCE'] = dataSource + ': ' + str(len(dataSources[dataSource])) + ' records'
+
             logging.debug('** did not meet dataSourceFiler **')
         if not filteredOut:
             matchList.append(matchedEntity)
+
+    # lookup the entity_id assigned to the search record if not already found
+    rowData['SEARCH_ENTITY_ID'] = search_entity_id
+    #if not search_entity_id and rowData.get('DATA_SOURCE') and rowData.get('RECORD_ID'):
+    #    response = bytearray()
+    #    if apiVersion['VERSION'][0:1] < '3':
+    #        retcode = g2Engine.getEntityByRecordIDV2(rowData['DATA_SOURCE'], rowData['RECORD_ID'], 0, response)
+    #    else:
+    #        retcode = g2Engine.getEntityByRecordID(rowData['DATA_SOURCE'], rowData['RECORD_ID'], response, 0)
+    #    response = response.decode() if response else ''
+
 
     # --set the no match condition
     if len(matchList) == 0:
