@@ -985,7 +985,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=None, help='Path and name of optional G2Module.ini file to use.')
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
     parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of an input file')
-    parser.add_argument('-t', '--truthFileName', dest='truthFileName', help='optional name of a truthset csv file for expected matches')
+    #parser.add_argument('-t', '--truthFileName', dest='truthFileName', help='optional name of a truthset csv file for expected matches')
     parser.add_argument('-o', '--outputFileName', dest='outputFileName', help='the name of the output file')
     parser.add_argument('-l', '--log_file', dest='logFileName', help='optional statistics filename (json format)')
     parser.add_argument('-nt', '--thread_count', type=int, default=0, help='number of threads to start')
@@ -995,7 +995,7 @@ if __name__ == "__main__":
 
     mappingFileName = args.mappingFileName
     inputFileName = args.inputFileName
-    truthFileName = args.truthFileName
+    truthFileName = None #args.truthFileName
     outputFileName = args.outputFileName
     logFileName = args.logFileName
     threadCount = args.thread_count
