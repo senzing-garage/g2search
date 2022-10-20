@@ -8,7 +8,7 @@ the results to a csv file for analysis.  It employs a mapping file to control th
 Usage:
 
 ```console
-python G2Search.py --help                                                                          
+python G2Search.py --help
 usage: G2Search.py [-h] [-c INI_FILE_NAME] [-m MAPPINGFILENAME]
                    [-i INPUTFILENAME] [-d DELIMITERCHAR] [-e FILEENCODING]
                    [-o OUTPUTFILENAME] [-l LOGFILENAME] [-nt THREAD_COUNT]
@@ -32,23 +32,23 @@ optional arguments:
 
 ## Contents
 
-1. [Prerequisites](#Prerequisites)
-2. [Installation](#Installation)
-3. [Mapping file](#Mapping-file)
-4. [Typical use](#Typical-use)
-5. [Sample output](#Sample-output)
+1. [Prerequisites](#prerequisites)
+1. [Mapping file](#mapping-file)
+1. [Typical use](#typical-use)
+1. [Sample output](#sample-output)
 
 ### Prerequisites
+
 - Python 3.6 or higher
 - Senzing API version 3.00 or higher
 
-*If using an SSHD container, you should first max it out with at least 4 processors and 30g of ram as the more threads 
-you give it, the faster it will run.  Also, if the database container is not set to auto-scale, you should give it  
+*If using an SSHD container, you should first max it out with at least 4 processors and 30g of ram as the more threads
+you give it, the faster it will run.  Also, if the database container is not set to auto-scale, you should give it
 additional resources as well.*
 
 1. Place the following files in a directory of your choice:
-    - [G2Search.py](G2Search.py) 
-    - [search_map_template.json](search_map_template.json) 
+    - [G2Search.py](G2Search.py)
+    - [search_map_template.json](search_map_template.json)
 
 2. Set PYTHONPATH environment variable to python directory where you installed Senzing.
     - Example: export PYTHONPATH=/opt/senzing/g2/python
@@ -60,8 +60,8 @@ Its a good idea to place these settings in your .bashrc file to make sure the en
 
 ### Mapping file
 
-See the [search_map_template.json](search_map_template.json).   This is a template that containing the likely settings you 
-would use for each search you perform.   Feel free to clone it and adjust the settings to fit the goals you have for each 
+See the [search_map_template.json](search_map_template.json).   This is a template that containing the likely settings you
+would use for each search you perform.   Feel free to clone it and adjust the settings to fit the goals you have for each
 particular search you want to run.
 
 There are several sections in this template:
@@ -70,12 +70,12 @@ There are several sections in this template:
 
 This section describes the input source file.   Currently only json search messages are supported.
 
-* fileFormat: JSON
+- fileFormat: JSON
 
 #### Scoring section
 
-This section dictates the weighted scoring of search results. For every matched entity in a search result, Senzing also supplies 
-a 1 to 100 score of how close the name was, how close the address was, etc. These scores can be used to create an overall score 
+This section dictates the weighted scoring of search results. For every matched entity in a search result, Senzing also supplies
+a 1 to 100 score of how close the name was, how close the address was, etc. These scores can be used to create an overall score
 for the matched record.
 
 see the article [Scoring-Search-Results](https://senzing.zendesk.com/hc/en-us/articles/360047855193-Scoring-Search-Results)
@@ -93,10 +93,10 @@ Filters include:
 
 Output columns:
 
-Output columns can come from the search record, the api, or the matched entity 
+Output columns can come from the search record, the api, or the matched entity
 as indicated by the "source" attribute.
 
-- input: This is helpful so that you can quickly see what record was searched for.  
+- input: This is helpful so that you can quickly see what record was searched for.
 You can specify any of the following ...
     - ROW_ID: the row number in the json file
     - SEARCH_ENTITY_ID: the entity_id assigned to the search record if the search record was actually loaded
@@ -117,13 +117,12 @@ You can specify any of the following ...
     - SCORE_DATA: all of the score data
 
 - record: you can specify any of the following
-    - NAME_DATA: all of the names
-    - ATTRIBUTE_DATA: dates of birth, gender, etc
-    - IDENTIFIER_DATA: all of the identifiers such as passport, tax_id, etc
-    - ADDRESS_DATA: all of the addresses
-    - PHONE_DATA: all of the phone numbers
-    - OTHER_DATA: all of the non resolving attributes such as dates, statuses and amounts
-
+  - NAME_DATA: all of the names
+  - ATTRIBUTE_DATA: dates of birth, gender, etc
+  - IDENTIFIER_DATA: all of the identifiers such as passport, tax_id, etc
+  - ADDRESS_DATA: all of the addresses
+  - PHONE_DATA: all of the phone numbers
+  - OTHER_DATA: all of the non resolving attributes such as dates, statuses and amounts
 
 ### Typical use
 
@@ -131,7 +130,7 @@ You can specify any of the following ...
 python G2Search.py -m search_map_template.json -i /search_list.json -o search_result.csv -l search_result.json
 ```
 
-The -nt THREAD_COUNT parameter will default to the max the resources of the computer or container you are 
+The -nt THREAD_COUNT parameter will default to the max the resources of the computer or container you are
 using.  However, you can override this to add more threads if desired.  For instance, if access to the database
 is slow, you can increase the number of threads running as they spend a lot of time waiting on database queries.
 
@@ -139,33 +138,27 @@ is slow, you can increase the number of threads running as they spend a lot of t
 
 *see the [sample_search_result.csv](sample_search_result.csv) file to see the result of all your searches*
 
-All of the search results are output to a csv file.   
+All of the search results are output to a csv file.
 
-There will be one or more rows for each search record.  
-* match_number: the match_number column will be zero if no rows are found match_number 1 will be the 
-best match found as determined by the weighted score. match_numbers 2-n are any additional matches 
+There will be one or more rows for each search record.
+
+- match_number: the match_number column will be zero if no rows are found match_number 1 will be the
+best match found as determined by the weighted score. match_numbers 2-n are any additional matches
 found also ranked by the weighed score.
-
 
 *see the [sample_search_result.json](sample_search_result.json) file*
 
-These accumulated statistics are displayed at the end of the run and captured in the log file if 
-specified.  
+These accumulated statistics are displayed at the end of the run and captured in the log file if
+specified.
 
-- summary: The summary section shows the total number searches performed and 
+- summary: The summary section shows the total number searches performed and
 the total that returned any sort of a match (resolved, possible, name_only)
 
-- resolution: the resolution section breaks down these matches by match level.  The 
-"best" section only counts the best matches found while "additional" section counts 
+- resolution: the resolution section breaks down these matches by match level.  The
+"best" section only counts the best matches found while "additional" section counts
 the additional matches found.
 
 - scoring: the scoring section breaks down these matches by the weighted match_score.
-The "best" section only counts the best matches found while "additional" section counts 
-the additional matches found.  The "name" section is included as so you can see the pure 
+The "best" section only counts the best matches found while "additional" section counts
+the additional matches found.  The "name" section is included as so you can see the pure
 name scores beinbg returned.
-
-
-
-
-
-
