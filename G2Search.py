@@ -247,14 +247,14 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
     rowData['SEARCH_STRING'] = searchStr
 
     #--get target record from truthset
-    if truthFileName:
-        try:
-            cluster_id = truthsetRecords[rowData['DATA_SOURCE']][rowData['RECORD_ID']]
-            targetRecord = truthsetTargets[cluster_id]
-            rowData['TARGET_DATA_SOURCE'] = targetRecord['DATA_SOURCE']
-            rowData['TARGET_RECORD_ID'] = targetRecord['RECORD_ID']
-        except:
-            pass
+    #if truthFileName:
+    #    try:
+    #        cluster_id = truthsetRecords[rowData['DATA_SOURCE']][rowData['RECORD_ID']]
+    #        targetRecord = truthsetTargets[cluster_id]
+    #        rowData['TARGET_DATA_SOURCE'] = targetRecord['DATA_SOURCE']
+    #        rowData['TARGET_RECORD_ID'] = targetRecord['RECORD_ID']
+    #    except:
+    #        pass
 
     search_entity_id = None
 
