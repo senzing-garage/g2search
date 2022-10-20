@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 import csv
 import json
 import glob
-
 from multiprocessing import Process, Queue, Value, Manager
 from queue import Empty, Full
 import threading
@@ -99,7 +98,10 @@ def wait_for_queue(qname, q):
 def setup_search_queue(thread_count, stop_search_threads, search_queue, result_queue, mappingDoc):
     try:
         g2Engine = G2Engine()
-        g2Engine.init('G2Search', iniParams, False)
+        if apiVersion['VERSION'][0:1] < '3':
+            g2Engine.initV2('G2Search', iniParams, False)
+        else:
+            g2Engine.init('G2Search', iniParams, False)
     except G2Exception as ex:
         logging.error(f'G2Exception: {ex}')
         with shutDown.get_lock():
@@ -115,7 +117,13 @@ def setup_search_queue(thread_count, stop_search_threads, search_queue, result_q
     searchFlagList.append('G2_ENTITY_INCLUDE_RECORD_FORMATTED_DATA')
     searchFlagList.append('G2_ENTITY_INCLUDE_RECORD_JSON_DATA')
     searchFlagList.append('G2_SEARCH_INCLUDE_STATS')
-    searchFlagBits = G2EngineFlags.combine_flags(searchFlagList)
+    if apiVersion['VERSION'][0:1] < '3':
+        searchFlagBits = 0
+        for flag_name in searchFlagList:
+            if hasattr(g2Engine, flag_name):
+                searchFlagBits = searchFlagBits | getattr(g2Engine, flag_name)
+    else:
+        searchFlagBits = G2EngineFlags.combine_flags(searchFlagList)
 
     thread_list = []
     for thread_id in range(thread_count):
@@ -236,12 +244,27 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
 
     else: # --already json or already mapped csv header
         searchStr = json.dumps(rowData)
-
     rowData['SEARCH_STRING'] = searchStr
+
+    #--get target record from truthset
+    #if truthFileName:
+    #    try:
+    #        cluster_id = truthsetRecords[rowData['DATA_SOURCE']][rowData['RECORD_ID']]
+    #        targetRecord = truthsetTargets[cluster_id]
+    #        rowData['TARGET_DATA_SOURCE'] = targetRecord['DATA_SOURCE']
+    #        rowData['TARGET_RECORD_ID'] = targetRecord['RECORD_ID']
+    #    except:
+    #        pass
+
+    search_entity_id = None
+
     # --empty searchResult = '{"SEARCH_RESPONSE": {"RESOLVED_ENTITIES": []}}'???
     try:
         response = bytearray()
-        retcode = g2Engine.searchByAttributes(searchStr, response, searchFlags)
+        if apiVersion['VERSION'][0:1] < '3':
+            retcode = g2Engine.searchByAttributesV2(searchStr, searchFlags, response)
+        else:
+            retcode = g2Engine.searchByAttributes(searchStr, response, searchFlags)
         response = response.decode() if response else ''
         #if len(response) > 500:
         #    print(json.dumps(json.loads(response), indent=4))
@@ -265,6 +288,11 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
                 dataSources[dataSource] = [record['RECORD_ID']]
             else:
                 dataSources[dataSource].append(record['RECORD_ID'])
+
+        # determine if the incoming record is in this entity
+        if rowData.get('DATA_SOURCE') and rowData.get('RECORD_ID'):
+            if rowData['RECORD_ID'] in dataSources.get(rowData['DATA_SOURCE'],[]):
+                search_entity_id = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID']
 
         dataSourceList = []
         for dataSource in dataSources:
@@ -316,6 +344,10 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
                     elif '-weight' in mappingDoc['scoring'][featureCode]:
                         matchScore += -mappingDoc['scoring'][featureCode]['-weight'] # --actual score does not matter if below the threshold
 
+        # add to score if this is the resolved entity
+        if resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID'] == search_entity_id:
+            matchScore = matchScore + 100
+
         # --create the possible match entity one-line summary
         matchedEntity = {}
         matchedEntity['ENTITY_ID'] = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID']
@@ -337,6 +369,7 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         matchedEntity['RECORDS'] = resolvedEntity['ENTITY']['RESOLVED_ENTITY']['RECORDS']
 
         # --check the output filters
+        matchedEntity['FILTERED_SOURCE'] = ''
         filteredOut = False
         if matchLevel > mappingDoc['output']['matchLevelFilter']:
             filteredOut = True
@@ -344,11 +377,30 @@ def process_search(rowData, mappingDoc, g2Engine, searchFlags):
         if bestScores['NAME']['score'] < mappingDoc['output']['nameScoreFilter']:
             filteredOut = True
             logging.debug('** did not meet nameScoreFilter **')
-        if mappingDoc['output']['dataSourceFilter'] and mappingDoc['output']['dataSourceFilter'] not in dataSources:
-            filteredOut = True
+        if mappingDoc['output']['dataSourceFilter']:
+            if mappingDoc['output']['dataSourceFilter'] not in dataSources:
+                filteredOut = True
+            else:
+                dataSource = mappingDoc['output']['dataSourceFilter']
+                if len(dataSources[dataSource]) == 1:
+                    matchedEntity['FILTERED_SOURCE'] = dataSource + ': ' + dataSources[dataSource][0]
+                else:
+                    matchedEntity['FILTERED_SOURCE'] = dataSource + ': ' + str(len(dataSources[dataSource])) + ' records'
+
             logging.debug('** did not meet dataSourceFiler **')
         if not filteredOut:
             matchList.append(matchedEntity)
+
+    # lookup the entity_id assigned to the search record if not already found
+    rowData['SEARCH_ENTITY_ID'] = search_entity_id
+    #if not search_entity_id and rowData.get('DATA_SOURCE') and rowData.get('RECORD_ID'):
+    #    response = bytearray()
+    #    if apiVersion['VERSION'][0:1] < '3':
+    #        retcode = g2Engine.getEntityByRecordIDV2(rowData['DATA_SOURCE'], rowData['RECORD_ID'], 0, response)
+    #    else:
+    #        retcode = g2Engine.getEntityByRecordID(rowData['DATA_SOURCE'], rowData['RECORD_ID'], response, 0)
+    #    response = response.decode() if response else ''
+
 
     # --set the no match condition
     if len(matchList) == 0:
@@ -494,6 +546,11 @@ def process_result(resultData, mappingDoc, statPack):
         elif matchedEntity['MATCH_LEVEL'] == 4:
             statPack['resolution'][level]['name_only'] += 1
 
+    if len(matchList) == 1 and matchList[0]['ENTITY_ID'] == 0 and 'DATA_SOURCE' in rowData and 'RECORD_ID' in rowData and 'TARGET_DATA_SOURCE' in rowData:
+        if 'missed' not in statPack:
+            statPack['missed'] = []
+        statPack['missed'].append(f"why {rowData['DATA_SOURCE']} {rowData['RECORD_ID']} {rowData['TARGET_DATA_SOURCE']} {rowData['TARGET_RECORD_ID']}")
+
     return statPack
 
 # ----------------------------------------
@@ -574,11 +631,12 @@ def processFile(mappingDoc):
     if 'matchLevelFilter' not in mappingDoc['output'] or int(mappingDoc['output']['matchLevelFilter']) < 1:
         mappingDoc['output']['matchLevelFilter'] = 99
     else:
-        mappingDoc['output']['matchLevelFilter'] = int(mappingDoc['output']['matchLevelFilter'])
-        if mappingDoc['output']['matchLevelFilter'] == 1:
-            searchFlags = searchFlags | g2Engine.G2_EXPORT_INCLUDE_RESOLVED
-        elif mappingDoc['output']['matchLevelFilter'] == 2:
-            searchFlags = searchFlags | g2Engine.G2_EXPORT_INCLUDE_RESOLVED | g2Engine.G2_EXPORT_INCLUDE_POSSIBLY_SAME
+        if False: #--needs to be implemented differently
+            mappingDoc['output']['matchLevelFilter'] = int(mappingDoc['output']['matchLevelFilter'])
+            if mappingDoc['output']['matchLevelFilter'] == 1:
+                searchFlags = searchFlags | g2Engine.G2_EXPORT_INCLUDE_RESOLVED
+            elif mappingDoc['output']['matchLevelFilter'] == 2:
+                searchFlags = searchFlags | g2Engine.G2_EXPORT_INCLUDE_RESOLVED | g2Engine.G2_EXPORT_INCLUDE_POSSIBLY_SAME
 
     if 'nameScoreFilter' not in mappingDoc['output']:
         mappingDoc['output']['nameScoreFilter'] = 0
@@ -927,6 +985,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config_file_name', dest='ini_file_name', default=None, help='Path and name of optional G2Module.ini file to use.')
     parser.add_argument('-m', '--mappingFileName', dest='mappingFileName', help='the name of a mapping file')
     parser.add_argument('-i', '--inputFileName', dest='inputFileName', help='the name of an input file')
+    #parser.add_argument('-t', '--truthFileName', dest='truthFileName', help='optional name of a truthset csv file for expected matches')
     parser.add_argument('-o', '--outputFileName', dest='outputFileName', help='the name of the output file')
     parser.add_argument('-l', '--log_file', dest='logFileName', help='optional statistics filename (json format)')
     parser.add_argument('-nt', '--thread_count', type=int, default=0, help='number of threads to start')
@@ -936,6 +995,7 @@ if __name__ == "__main__":
 
     mappingFileName = args.mappingFileName
     inputFileName = args.inputFileName
+    truthFileName = None #args.truthFileName
     outputFileName = args.outputFileName
     logFileName = args.logFileName
     threadCount = args.thread_count
@@ -947,9 +1007,6 @@ if __name__ == "__main__":
     try:
         g2Product = G2Product()
         apiVersion = json.loads(g2Product.version())
-        if apiVersion['VERSION'][0:1] < '3':
-            logging.error(f'This program requires Senzing API version 3.0 or higher')
-            sys.exit(1)
     except G2Exception as err:
         print(err)
         sys.exit(1)
@@ -1001,7 +1058,10 @@ if __name__ == "__main__":
     if threadCount == 0:
         try:
             g2Diag = G2Diagnostic()
-            g2Diag.init('pyG2Diagnostic', iniParams, False)
+            if apiVersion['VERSION'][0:1] < '3':
+                g2Diag.initV2('pyG2Diagnostic', iniParams, False)
+            else:
+                g2Diag.init('pyG2Diagnostic', iniParams, False)
             physical_cores = g2Diag.getPhysicalCores()
             logical_cores = g2Diag.getLogicalCores()
             calc_cores_factor = 2 if physical_cores != logical_cores else 1.2
@@ -1010,6 +1070,21 @@ if __name__ == "__main__":
         except G2Exception as err:
             logging.error('%s' % str(err))
             sys.exit(1)
+
+
+    if truthFileName:
+        truthsetRecords = {}
+        truthsetTargets = {}
+        if not os.path.exists(truthFileName):
+            logging.error(f"{truthFileName} not found!")
+            sys.exit(1)
+        logging.info(f'Loading truthset ...')
+        for record in csv.DictReader(open(truthFileName, 'r'), dialect='excel'):
+            if record['DATA_SOURCE'] not in truthsetRecords:
+                truthsetRecords[record['DATA_SOURCE']] = {}
+            truthsetRecords[record['DATA_SOURCE']][record['RECORD_ID']] = record['CLUSTER_ID']
+            truthsetTargets[record['CLUSTER_ID']] = record # target is the last one in the set!
+
 
     processFile(mappingDoc)
 
