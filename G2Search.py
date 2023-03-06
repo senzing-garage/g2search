@@ -73,7 +73,7 @@ def wait_for_queues(search_queue, result_queue):
         elif search_queue.qsize() or result_queue.qsize():
             logging.info('waiting for %s search_queue and %s result_queue records' % (search_queue.qsize(), result_queue.qsize()))
 
-    if (search_queue.qsize() or result_queue.qsize()):
+    if search_queue.qsize() or result_queue.qsize():
         logging.warning('queues are not empty!')
         return False
     return True
@@ -89,7 +89,7 @@ def wait_for_queue(qname, q):
             break
         elif q.qsize():
             logging.info(f'waiting for {q.qsize()} {qname} records')
-    if (q.qsize()):
+    if q.qsize():
         logging.warning(f'{qname} not empty!')
         return False
     return True
@@ -883,7 +883,7 @@ def getNextRow(fileInfo):
             break
 
         try:
-            line = next(fileInfo['reader'])
+            line = next(fileInfo['reader']).strip()
         except StopIteration:
             break
         except:
@@ -892,6 +892,7 @@ def getNextRow(fileInfo):
             errCnt += 1
             continue
         fileInfo['rowCnt'] += 1
+
         if line: # --skip empty lines
 
             if fileInfo['fileFormat'] == 'JSON':
