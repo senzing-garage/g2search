@@ -33,6 +33,7 @@ optional arguments:
 ## Contents
 
 1. [Prerequisites](#prerequisites)
+1. [Input file](#input-file)
 1. [Mapping file](#mapping-file)
 1. [Typical use](#typical-use)
 1. [Sample output](#sample-output)
@@ -57,6 +58,15 @@ additional resources as well.*
 
 Its a good idea to place these settings in your .bashrc file to make sure the enviroment is always setup and ready to go.
 *These will already be set if you are using a Senzing docker image such as the sshd or console.*
+
+### Input file
+
+The input file contains the [Senzing formatted](https://senzing.zendesk.com/hc/en-us/articles/231925448-Generic-Entity-Specification-Data-Mapping) JSON string for the search requests. Each search request should be on a single line.
+
+```console
+{"NAME_FULL":"ROBERT SMITH",  "DATE_OF_BIRTH":"11/12/1978"}
+{"NAME_FULL":"JOHN DANIELS",  "SSN_NUMBER":"123-45-6789"}
+```
 
 ### Mapping file
 
