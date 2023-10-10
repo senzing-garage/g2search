@@ -33,6 +33,7 @@ disable=
     unused-argument,
     unused-import,
     unused-variable,
+    used-before-assignment,
     useless-return,
     using-constant-test,
 good-names=
