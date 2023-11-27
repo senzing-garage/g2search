@@ -3,7 +3,7 @@
 ## Overview
 
 The [G2Search.py](G2Search.py) utility reads a file of json formatted search records, calling the search API for each, and logs
-the results to a csv file for analysis.  It employs a mapping file to control the output.
+the results to a csv file for analysis.  It employs a configuration file to control the output.
 
 Usage:
 
