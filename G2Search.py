@@ -6,19 +6,19 @@ import time
 from datetime import datetime
 import json
 import csv
-
 import argparse
+import configparser
 import signal
+import itertools
+import logging
 
 import concurrent.futures
-import itertools
 
 from senzing import G2Engine, G2EngineFlags, G2Exception
 
-import logging
 
 class SZSearch:
-
+    """ senzing search wrapper class"""
     def __init__(self, g2module_params, **kwargs):
 
         self.g2_engine = G2Engine()
@@ -97,10 +97,7 @@ class SZSearch:
                     data_sources[data_source].append(record['RECORD_ID'])
             matched_entity['DATA_SOURCES'] = ' | '.join(f"{x}: {data_sources[x][0]}" if len(data_sources[x]) == 1 else f"{x}: ({len(data_sources[x])})" for x in data_sources)
 
-
             for feature_code in sorted(entity_data['MATCH_INFO']['FEATURE_SCORES'].keys(), key=lambda x: (self.feature_order.get(x, 99), x)):
-                #if self.feature_order.get(feature_code, 99) < 1:
-                #    continue
                 score_code = 'GNR_FN' if feature_code == 'NAME' else 'FULL_SCORE'
                 score_config = self.scoring_config.get(feature_code, {'threshold': 0, '+weight': 100})
                 best_score_record = sorted(entity_data['MATCH_INFO']['FEATURE_SCORES'][feature_code], key=lambda x: x[score_code])[-1]
@@ -113,7 +110,6 @@ class SZSearch:
 
                 matched_entity['SEARCH_VALUES'] += f"{feature_code}: {best_score_record['INBOUND_FEAT']} | "
                 matched_entity['MATCHED_VALUES'] += f"{feature_code}: {best_score_record['CANDIDATE_FEAT']} ({best_score_record[score_code]}) | "
-                #matched_entity['matched_values'] += f"{feature_code}: {best_score_record['INBOUND_FEAT']} -vs- {best_score_record['CANDIDATE_FEAT']} ({best_score_record[score_code]}) | "
                 matched_entity['RAW_SCORES'][feature_code] = best_score_record
             matched_entity['MATCH_SCORE'] = round(matched_entity['MATCH_SCORE'],0)
             matched_entity['SEARCH_VALUES'] = matched_entity['SEARCH_VALUES'][0:-2] if matched_entity['SEARCH_VALUES'] else ''
@@ -172,6 +168,9 @@ def get_next_record(reader):
 
 def file_search(engine, input_file, output_file, output_columns):
 
+    output_file_name, output_file_ext = os.path.splitext(output_file)
+    csv_output_file = output_file_name + '.csv'
+    json_output_file = output_file_name + '.json'
     column_headers, column_mappings = prepare_output(output_columns)
 
     stat_pack = {
@@ -187,8 +186,14 @@ def file_search(engine, input_file, output_file, output_columns):
     stat_pack['audit']['best'] = {'true_positive_count': 0, 'false_positive_count': 0, 'false_negative_count': 0}
     stat_pack['audit']['all'] = {'true_positive_count': 0, 'false_positive_count': 0, 'false_negative_count': 0}
 
+    if args.thread_count > 0:
+        max_workers = args.thread_count
+    else:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            max_workers = executor._max_workers
+
     start_time = time.time()
-    with open(output_file, 'w') as out_file:
+    with open(csv_output_file, 'w') as out_file:
 
         csv_writer = csv.writer(out_file)
         csv_writer.writerow(column_headers)
@@ -201,10 +206,12 @@ def file_search(engine, input_file, output_file, output_columns):
             else:
                 reader = in_file
 
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers) as executor:
+                logging.info(f"starting {executor._max_workers} threads")
+
                 futures = {}
                 record_count = 0
-                while record_count < executor._max_workers * 2: # prime the work queue
+                while record_count < executor._max_workers: # prime the work queue
                     record = get_next_record(reader)
                     if not record:
                         break
@@ -264,8 +271,9 @@ def file_search(engine, input_file, output_file, output_columns):
                                 csv_writer.writerow(csv_record)
 
                         if stat_pack['counts']['search_count'] % 1000 == 0:
+                            eps = int(float(stat_pack['counts']['search_count']) / (float(time.time() - start_time if time.time() - start_time != 0 else 0)))
                             elapsed_min = round((time.time() - start_time) / 60, 1)
-                            logging.info(f"{stat_pack['counts']['search_count']} searches, {stat_pack['counts']['found_count']} found, {stat_pack['counts']['error_count']} errors, {elapsed_min} minutes elapsed")
+                            logging.info(f"{stat_pack['counts']['search_count']} searches, {stat_pack['counts']['found_count']} found, {stat_pack['counts']['error_count']} errors, {elapsed_min} minutes elapsed, {eps} searches per second")
 
                         futures.pop(f)
 
@@ -285,11 +293,24 @@ def file_search(engine, input_file, output_file, output_columns):
                     except:
                         pass
 
-                stat_pack['timings']['ended'] = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
-                stat_pack['timings']['total_run_time'] = round((time.time() - start_time) / 60, 1)
-                stat_pack['timings']['status'] = 'completed successfully' if shut_down == 0 else 'ABORTED!'
-                #logging.info(f"{stat_pack['search_count']} searches, {stat_pack['found_count']} found, {stat_pack['error_count']} errors, {elapsed_min} minutes elapsed")
-                logging.info(f"\n{json.dumps(stat_pack, indent=4)}")
+    stat_pack['timings']['ended'] = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
+    stat_pack['timings']['total_run_time'] = round((time.time() - start_time) / 60, 1)
+    stat_pack['timings']['searches_per_second'] = int(float(stat_pack['counts']['search_count']) / (float(time.time() - start_time if time.time() - start_time != 0 else 0)))
+    stat_pack['timings']['status'] = 'completed successfully' if shut_down == 0 else 'ABORTED!'
+
+    if stat_pack['audit']['best']['true_positive_count'] + stat_pack['audit']['best']['false_positive_count'] + stat_pack['audit']['best']['false_negative_count'] == 0:
+        del stat_pack['audit']
+    else:
+        stat_pack['audit']['best']['precision'] = round(stat_pack['audit']['best']['true_positive_count'] / (stat_pack['audit']['best']['true_positive_count'] + stat_pack['audit']['best']['false_positive_count'] + .0), 5)
+        stat_pack['audit']['best']['recall'] = round(stat_pack['audit']['best']['true_positive_count'] / (stat_pack['audit']['best']['true_positive_count'] + stat_pack['audit']['best']['false_negative_count'] + .0), 5)
+        stat_pack['audit']['best']['f1-score'] = round(2 * ((stat_pack['audit']['best']['precision'] * stat_pack['audit']['best']['recall']) / (stat_pack['audit']['best']['precision'] + stat_pack['audit']['best']['recall'] + .0)), 5)
+        stat_pack['audit']['all']['precision'] = round(stat_pack['audit']['all']['true_positive_count'] / (stat_pack['audit']['all']['true_positive_count'] + stat_pack['audit']['all']['false_positive_count'] + .0), 5)
+        stat_pack['audit']['all']['recall'] = round(stat_pack['audit']['all']['true_positive_count'] / (stat_pack['audit']['all']['true_positive_count'] + stat_pack['audit']['all']['false_negative_count'] + .0), 5)
+        stat_pack['audit']['all']['f1-score'] = round(2 * ((stat_pack['audit']['all']['precision'] * stat_pack['audit']['all']['recall']) / (stat_pack['audit']['all']['precision'] + stat_pack['audit']['all']['recall'] + .0)), 5)
+
+    logging.info(f"\n{json.dumps(stat_pack, indent=4)}")
+    with open(json_output_file, 'w') as out_file:
+        out_file.write(json.dumps(stat_pack, indent=4))
 
 
 def get_engine_config_from_ini():
@@ -298,7 +319,6 @@ def get_engine_config_from_ini():
     ini_file_name = os.path.normpath(os.path.join(os.getenv('SENZING_ETC_PATH'), 'G2Module.ini'))
     if not os.path.exists(ini_file_name):
         raise Exception(f"G2Module.ini not found at {os.getenv('SENZING_ETC_PATH')}")
-    import configparser
     ini_parser = configparser.ConfigParser(empty_lines_in_values=False, interpolation=None)
     ini_parser.read(ini_file_name)
     json_config = {}
@@ -323,33 +343,32 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config_file', help='the name of a search configuration file')
-    parser.add_argument('-i', '--input_file', help='the name of a json input file')
-    parser.add_argument('-o', '--output_file', help='the name of the csv output file')
-    parser.add_argument('-s', '--stats_file', help='optional name of json statistics filen')
-    parser.add_argument('-t', '--truthset_file', help='optional name of a truthset csv file for expected matches')
+    parser.add_argument('-c', '--config_file_name', help='Path and name of optional G2Module.ini file to use.')
+    parser.add_argument('-i', '--input_file_name', help='the name of a json input file')
+    parser.add_argument('-o', '--output_file_root', help='root name for output files created, both a csv and a json stats file will be created')
+    parser.add_argument('-t', '--thread_count', type=int, default=0, help='number of threads to start, defaults to max available')
     parser.add_argument('-D', '--debug', dest='debug', action='store_true', default=False, help='run in debug mode')
     args = parser.parse_args()
 
     loggingLevel = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%m/%d %I:%M', level=loggingLevel)
 
-    if not args.input_file or not os.path.exists(args.input_file):
-        logging.error(f"{'the input file does not exist' if args.input_file else 'an input file is required'}")
+    if not args.input_file_name or not os.path.exists(args.input_file_name):
+        logging.error(f"{'the input file does not exist' if args.input_file_name else 'an input file is required'}")
         sys.exit(-1)
 
-    if not args.output_file:
-        logging.error('an output file is required')
+    if not args.output_file_root:
+        logging.error('an output file root name is required')
         sys.exit(-1)
 
     search_kwargs = {}
     output_columns = None
-    if args.config_file:
-        if not os.path.exists(args.config_file):
+    if args.config_file_name:
+        if not os.path.exists(args.config_file_name):
             logging.error('the configuration file does not exist')
             sys.exit(-1)
         try:
-            config_data = json.load(open(args.config_file, 'r'))
+            config_data = json.load(open(args.config_file_name, 'r'))
             search_kwargs['max_return_count'] = config_data.get('filtering', {}).get('max_return_count', 0)
             search_kwargs['data_source_filter'] = config_data.get('filtering', {}).get('data_source_filter', '').upper()
             search_kwargs['match_level_filter'] = config_data.get('filtering', {}).get('match_level_filter', 0)
@@ -375,6 +394,5 @@ if __name__ == "__main__":
         logging.error(f"shutdown: {ex}")
         sys.exit(-1)
 
-    file_search(sz_engine, args.input_file, args.output_file, output_columns)
+    file_search(sz_engine, args.input_file_name, args.output_file_root, output_columns)
     del sz_engine
-
