@@ -11,6 +11,36 @@
         {
             "threshold": 80,
             "+weight": 100
+        },
+        "DOB": {
+          "threshold": 85,
+          "+weight": 10,
+          "-weight": 30
+        },
+        "ADDRESS": {
+          "threshold": 30,
+          "+weight": 10
+        },
+        "PHONE": {
+          "threshold": 80,
+          "+weight": 10
+        },
+        "EMAIL": {
+          "threshold": 80,
+          "+weight": 10
+        },
+        "SSN": {
+          "threshold": 90,
+          "+weight": 10,
+          "-weight": 30
+        },
+        "DRLIC": {
+          "threshold": 90,
+          "+weight": 10
+        },
+        "TAX_ID": {
+          "threshold": 90,
+          "+weight": 10
         }
     },
     "output_columns":

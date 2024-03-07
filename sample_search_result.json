@@ -1,12 +1,12 @@
 {
     "timings": {
-        "started": "2024-03-07 05:11:18",
-        "api_ms": 2.275639772415161,
-        "fmt_ms": 0.03928017616271973,
-        "wrt_ms": 0.0011200904846191406,
-        "ended": "2024-03-07 05:11:19",
+        "started": "2024-03-07 05:22:09",
+        "api_ms": 2.1758995056152344,
+        "fmt_ms": 0.04051542282104492,
+        "wrt_ms": 0.0014617443084716797,
+        "ended": "2024-03-07 05:22:10",
         "total_run_time": 0.0,
-        "searches_per_second": 623,
+        "searches_per_second": 644,
         "status": "completed successfully"
     },
     "counts": {
@@ -16,5 +16,23 @@
         "matched_count": 113,
         "possible_count": 2,
         "related_count": 5
+    },
+    "audit": {
+        "best": {
+            "true_positive_count": 112,
+            "false_positive_count": 8,
+            "false_negative_count": 0,
+            "precision": 0.93333,
+            "recall": 1.0,
+            "f1-score": 0.96552
+        },
+        "all": {
+            "true_positive_count": 120,
+            "false_positive_count": 259,
+            "false_negative_count": 0,
+            "precision": 0.31662,
+            "recall": 1.0,
+            "f1-score": 0.48096
+        }
     }
 }
