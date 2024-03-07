@@ -133,15 +133,15 @@ class SZSearch:
                 elif score_config.get('-weight'):
                     matched_entity['MATCH_SCORE'] -= score_config['-weight']
 
-            matched_entity['FEATURE_SCORES_STRING'] = ' | '.join(all_scores)
-            matched_entity['SEARCH_FEATURE_STRING'] = ' | '.join(all_searched)
-            matched_entity['ENTITY_FEATURE_STRING'] = ' | '.join(all_matched)
-            matched_entity['MATCHING_DETAILS_STRING'] = ' | '.join(all_details)
+            matched_entity['MATCHED_SCORES'] = ' | '.join(all_scores)
+            matched_entity['MATCHED_VALUES'] = ' | '.join(all_details)
+            matched_entity['SEARCH_FEATURES'] = ' | '.join(all_searched)
+            matched_entity['ENTITY_FEATURES'] = ' | '.join(all_matched)
 
-            matched_entity['FEATURE_SCORES_MULTILINE'] = '\n'.join(all_scores)
-            matched_entity['SEARCH_FEATURE_MULTILINE'] = '\n'.join(all_searched)
-            matched_entity['ENTITY_FEATURE_MULTILINE'] = '\n'.join(all_matched)
-            matched_entity['MATCHING_DETAILS_MULTILINE'] = '\n'.join(all_details)
+            matched_entity['MATCHED_SCORES_MULTILINE'] = '\n'.join(all_scores)
+            matched_entity['MATCHED_VALUES_MULTILINE'] = '\n'.join(all_details)
+            matched_entity['SEARCH_FEATURES_MULTILINE'] = '\n'.join(all_searched)
+            matched_entity['ENTITY_FEATURES_MULTILINE'] = '\n'.join(all_matched)
             scored_entities.append(matched_entity)
         return scored_entities
 
@@ -409,7 +409,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--input_file_name', help='the name of a json input file')
     parser.add_argument('-o', '--output_file_root', help='root name for output files created, both a csv and a json stats file will be created')
     parser.add_argument('-nt', '--thread_count', type=int, default=0, help='number of threads to start, defaults to max available')
-    parser.add_argument('-A', '--do_audit', dest='do_audit', action='store_true', default=False, help='run in debug mode')
+    parser.add_argument('-A', '--do_audit', dest='do_audit', action='store_true', default=False, help='compute precision and recall (requires expected record_id in search record)')
     parser.add_argument('-D', '--debug', dest='debug', action='store_true', default=False, help='run in debug mode')
     args = parser.parse_args()
 

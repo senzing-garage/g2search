@@ -19,7 +19,7 @@
             "row_number": "{search_record['ROW_ID']}"
         },
         {
-            "search_name": "{search_record['NAME_ORG']}"
+            "search_record": "{search_record}"
         },
         {
             "match_number": "{matched_entity['MATCH_NUMBER']}"
