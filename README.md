@@ -46,7 +46,7 @@ optional arguments:
 
 ### Input file
 
-The input file should contain a list of search records formatted according to the [Senzing formatted](https://senzing.zendesk.com/hc/en-us/articles/231925448-Generic-Entity-Specification-Data-Mapping)
+The input file should contain a list of search records formatted according to the [Senzing Generic Entity Specification](https://senzing.zendesk.com/hc/en-us/articles/231925448-Generic-Entity-Specification-Data-Mapping)
 
 
 ### Configuration file
