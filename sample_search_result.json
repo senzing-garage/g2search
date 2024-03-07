@@ -1,12 +1,12 @@
 {
     "timings": {
-        "started": "2024-03-07 05:03:13",
-        "api_ms": 2.87650728225708,
-        "fmt_ms": 0.041322946548461914,
-        "wrt_ms": 0.0010700225830078125,
-        "ended": "2024-03-07 05:03:14",
+        "started": "2024-03-07 05:11:18",
+        "api_ms": 2.275639772415161,
+        "fmt_ms": 0.03928017616271973,
+        "wrt_ms": 0.0011200904846191406,
+        "ended": "2024-03-07 05:11:19",
         "total_run_time": 0.0,
-        "searches_per_second": 497,
+        "searches_per_second": 623,
         "status": "completed successfully"
     },
     "counts": {

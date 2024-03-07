@@ -4,17 +4,17 @@ import os
 import sys
 import time
 from datetime import datetime
-import json
-import orjson
-import csv
 import argparse
 import configparser
 import signal
 import itertools
 import logging
 import re
-
+import json
+import csv
 import concurrent.futures
+
+import orjson
 
 from senzing import G2Engine, G2EngineFlags, G2Exception
 
