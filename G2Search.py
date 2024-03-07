@@ -5,12 +5,14 @@ import sys
 import time
 from datetime import datetime
 import json
+import orjson
 import csv
 import argparse
 import configparser
 import signal
 import itertools
 import logging
+import re
 
 import concurrent.futures
 
@@ -26,9 +28,11 @@ class SZSearch:
         self.g2_engine.primeEngine()
 
         self.max_return_count = kwargs.get('max_return_count', 0)
+        self.match_score_filter = kwargs.get('match_level_filter', None)
+        self.match_level_filter = kwargs.get('match_score_filter', None)
         self.data_source_filter = kwargs.get('data_source_filter', '').upper()
-        self.match_level_filter = kwargs.get('match_level_filter', None)
         self.scoring_config = kwargs.get('scoring_config', {})
+        self.column_mappings = kwargs.get('column_mappings', [])
 
         search_flag_list = ['G2_SEARCH_INCLUDE_STATS',
                             'G2_SEARCH_INCLUDE_FEATURE_SCORES',
@@ -42,6 +46,9 @@ class SZSearch:
         else:
             search_flag_list.append('G2_SEARCH_INCLUDE_ALL_ENTITIES')
         self.search_flag_bits = G2EngineFlags.combine_flags(search_flag_list)
+
+
+        # special presentation vars
         self.feature_order = {'NAME': 1, 'DOB': 2, 'GENDER': 2, 'ADDRESS': 3, "PHONE": 3, "EMAIL": 3, "WEBSITE": 3, "SSN": 4, "NATIONAL_ID": 4, "PASSPORT": 4, "DRIVERS_LICENSE": 4}
 
 
@@ -49,44 +56,42 @@ class SZSearch:
         self.g2_engine.destroy()
 
 
-    def search(self, search_string):
-        search_data = {"search_string": search_string}
-
-        start_time_search = time.time()
+    def search(self, row_id, search_string):
+        if type(search_string) == dict:
+            search_string = json.dumps(search_string)
+        start_time = time.time()
         try:
             response = bytearray()
             self.g2_engine.searchByAttributes(search_string, response, self.search_flag_bits)
-            search_response = json.loads(response)
         except G2Exception as ex:
-            search_data['error'] = ex
-            return search_data
-        search_data['api_time'] = time.time() - start_time_search
+            print('-->', ex)
+            return {'error': ex}
+        search_data = {'api_ms': time.time() - start_time}
 
-        search_response = self.score_response(search_response)
-        search_response = self.filter_response(search_response)
-
-        search_data['search_time'] = time.time() - start_time_search
-        search_data['search_response'] = search_response
+        start_time = time.time()
+        search_response = orjson.loads(response)
+        search_data['search_record'] = orjson.loads(search_string)
+        search_data['search_record']['ROW_ID'] = row_id
+        search_data['entities_returned'] = self.filter_entities(self.score_entities(search_response.get('RESOLVED_ENTITIES', [])))
+        search_data['formatted_rows'] = self.format_response(search_data)
+        search_data['fmt_ms'] = time.time() - start_time
 
         return search_data
 
 
-    def score_response(self, json_response):
+    def score_entities(self, entity_list):
         scored_entities = []
-        for entity_data in json_response.get('RESOLVED_ENTITIES'):
+        for entity_data in entity_list:
             matched_entity = {'ENTITY_ID': entity_data['ENTITY']['RESOLVED_ENTITY']['ENTITY_ID'],
                               'ENTITY_NAME': entity_data['ENTITY']['RESOLVED_ENTITY']['ENTITY_NAME'],
                               'RECORD_LIST': entity_data['ENTITY']['RESOLVED_ENTITY']['RECORDS'],
                               'DATA_SOURCES': '',
+                              'RULE_CODE': entity_data['MATCH_INFO']['ERRULE_CODE'],
                               'MATCH_SCORE': 0,
                               'MATCH_LEVEL': entity_data['MATCH_INFO']['MATCH_LEVEL'],
                               'MATCH_CODE': entity_data['MATCH_INFO']['MATCH_LEVEL_CODE'],
-                              'MATCH_KEY': entity_data['MATCH_INFO']['MATCH_KEY'][1:], # strips leading +
-                              'RULE_CODE': entity_data['MATCH_INFO']['ERRULE_CODE'],
-                              'SEARCH_VALUES': '',
-                              'MATCHED_VALUES': '',
-                              'RAW_SCORES': {}}
-
+                              'MATCH_KEY': entity_data['MATCH_INFO']['MATCH_KEY'][1:], 
+                              'RAW_SCORING_DATA': {}}
 
             data_sources = {}
             for record in entity_data['ENTITY']['RESOLVED_ENTITY']['RECORDS']:
@@ -97,32 +102,56 @@ class SZSearch:
                     data_sources[data_source].append(record['RECORD_ID'])
             matched_entity['DATA_SOURCES'] = ' | '.join(f"{x}: {data_sources[x][0]}" if len(data_sources[x]) == 1 else f"{x}: ({len(data_sources[x])})" for x in data_sources)
 
+            all_scores = []
+            all_searched = []
+            all_matched = []
+            all_details = []
+
             for feature_code in sorted(entity_data['MATCH_INFO']['FEATURE_SCORES'].keys(), key=lambda x: (self.feature_order.get(x, 99), x)):
                 score_code = 'GNR_FN' if feature_code == 'NAME' else 'FULL_SCORE'
                 score_config = self.scoring_config.get(feature_code, {'threshold': 0, '+weight': 100})
                 best_score_record = sorted(entity_data['MATCH_INFO']['FEATURE_SCORES'][feature_code], key=lambda x: x[score_code])[-1]
+
                 matched_entity[f'{feature_code}_SCORE'] = best_score_record[score_code]
+                matched_entity[f'{feature_code}_SEARCHED'] = best_score_record['INBOUND_FEAT']
+                matched_entity[f'{feature_code}_MATCHED'] = best_score_record['CANDIDATE_FEAT']
+
+                score_detail = []
+                for score_code in best_score_record.keys():
+                    if score_code not in ('INBOUND_FEAT','CANDIDATE_FEAT') and best_score_record[score_code] >= 0:
+                        score_detail.append(f"{score_code}={best_score_record[score_code]}")
+                all_scores.append(f"{feature_code}({','.join(score_detail)})")
+                all_searched.append(f"{feature_code}({best_score_record['INBOUND_FEAT']})")
+                all_matched.append(f"{feature_code}({best_score_record['CANDIDATE_FEAT']})")
+                matching_details = f"{feature_code}({best_score_record['INBOUND_FEAT']} | {best_score_record['CANDIDATE_FEAT']} | {' | '.join(score_detail)})"
+                all_details.append(matching_details)
+                matched_entity[f'{feature_code}_DETAILS'] = matching_details
+                matched_entity['RAW_SCORING_DATA'][feature_code] = best_score_record
 
                 if best_score_record[score_code] >= score_config['threshold']:
                     matched_entity['MATCH_SCORE'] += (best_score_record[score_code] * (score_config['+weight']/100))
                 elif score_config.get('-weight'):
                     matched_entity['MATCH_SCORE'] -= score_config['-weight']
 
-                matched_entity['SEARCH_VALUES'] += f"{feature_code}: {best_score_record['INBOUND_FEAT']} | "
-                matched_entity['MATCHED_VALUES'] += f"{feature_code}: {best_score_record['CANDIDATE_FEAT']} ({best_score_record[score_code]}) | "
-                matched_entity['RAW_SCORES'][feature_code] = best_score_record
-            matched_entity['MATCH_SCORE'] = round(matched_entity['MATCH_SCORE'],0)
-            matched_entity['SEARCH_VALUES'] = matched_entity['SEARCH_VALUES'][0:-2] if matched_entity['SEARCH_VALUES'] else ''
-            matched_entity['MATCHED_VALUES'] = matched_entity['MATCHED_VALUES'][0:-2] if matched_entity['MATCHED_VALUES'] else ''
+            matched_entity['FEATURE_SCORES_STRING'] = ' | '.join(all_scores)
+            matched_entity['SEARCH_FEATURE_STRING'] = ' | '.join(all_searched)
+            matched_entity['ENTITY_FEATURE_STRING'] = ' | '.join(all_matched)
+            matched_entity['MATCHING_DETAILS_STRING'] = ' | '.join(all_details)
 
+            matched_entity['FEATURE_SCORES_MULTILINE'] = '\n'.join(all_scores)
+            matched_entity['SEARCH_FEATURE_MULTILINE'] = '\n'.join(all_searched)
+            matched_entity['ENTITY_FEATURE_MULTILINE'] = '\n'.join(all_matched)
+            matched_entity['MATCHING_DETAILS_MULTILINE'] = '\n'.join(all_details)
             scored_entities.append(matched_entity)
         return scored_entities
 
-    def filter_response(self, scored_response):
+    def filter_entities(self, entity_list):
         filtered_entities = []
         cntr = 0
-        for entity_data in sorted(scored_response, key=lambda x: x['MATCH_SCORE'], reverse=True):
-            if self.match_level_filter and entity_data['MATCH_LEVEL'] > self.match_level_filter:
+        for entity_data in sorted(entity_list, key=lambda x: x['MATCH_SCORE'], reverse=True):
+            if self.match_score_filter and entity_data['MATCH_SCORE'] >= self.match_score_filter:
+                continue
+            if self.match_level_filter and entity_data['MATCH_LEVEL'] >= self.match_level_filter:
                 continue
             if self.data_source_filter and self.data_source_filter not in str(entity_data['RECORD_LIST']):
                 continue
@@ -136,6 +165,43 @@ class SZSearch:
         return filtered_entities
 
 
+    def format_response(self, search_data):
+
+        search_record = search_data['search_record']
+        search_data_source = search_record.get('DATA_SOURCE')
+        search_record_id = search_record.get('RECORD_ID') 
+
+        returned_entities = search_data['entities_returned']
+        if len(returned_entities) == 0:
+            returned_entities = [{'MATCH_NUMBER': 0}]
+
+        formatted_rows = []
+        for matched_entity in returned_entities:
+            
+            audit_status = 'n/a'
+            if search_record_id and args.do_audit:
+                if matched_entity['MATCH_NUMBER'] == 0:
+                    audit_status = 'false_negative'
+                else:
+                    if record_in_list(search_data_source, search_record_id, matched_entity['RECORD_LIST']):
+                        audit_status = 'true_positive'
+                    else:
+                        audit_status = 'false_positive'
+            matched_entity['AUDIT_STATUS'] = audit_status
+
+            formatted_record = []
+            for column_map in self.column_mappings:
+                try:
+                    formatted_record.append(eval(column_map))
+                except Exception as ex:
+                    if matched_entity['MATCH_NUMBER'] > 0:
+                        formatted_record.append(type(ex).__name__)
+                    else:
+                        formatted_record.append('')
+
+            formatted_rows.append(formatted_record)
+        return formatted_rows
+
 def prepare_output(output_columns):
     column_headers = []
     column_mappings = []
@@ -144,13 +210,6 @@ def prepare_output(output_columns):
         column_map = f"{list(column_data.items())[0][1]}"
         column_mappings.append(f'f"{column_map}"')
     return column_headers, column_mappings
-
-
-def prepare_input(row_id, input_record):
-    if not isinstance(input_record, dict):
-        input_record = json.loads(input_record)
-    input_record['ROW_ID'] = row_id
-    return json.dumps(input_record)
 
 
 def record_in_list(data_source, record_id, record_list):
@@ -166,15 +225,17 @@ def get_next_record(reader):
     except StopIteration: 
         return None
 
-def file_search(engine, input_file, output_file, output_columns):
+def file_search(engine, input_file, output_file, column_headers):
 
     output_file_name, output_file_ext = os.path.splitext(output_file)
     csv_output_file = output_file_name + '.csv'
     json_output_file = output_file_name + '.json'
-    column_headers, column_mappings = prepare_output(output_columns)
 
     stat_pack = {
-        'timings': {'started': datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")},
+        'timings': {'started': datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S"), 
+                    'api_ms': 0,
+                    'fmt_ms': 0,
+                    'wrt_ms': 0},
         'counts': {'search_count': 0,
                    'error_count': 0,
                    'found_count': 0,
@@ -186,19 +247,17 @@ def file_search(engine, input_file, output_file, output_columns):
     stat_pack['audit']['best'] = {'true_positive_count': 0, 'false_positive_count': 0, 'false_negative_count': 0}
     stat_pack['audit']['all'] = {'true_positive_count': 0, 'false_positive_count': 0, 'false_negative_count': 0}
 
-    if args.thread_count > 0:
-        max_workers = args.thread_count
-    else:
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            max_workers = executor._max_workers
+    max_workers = args.thread_count if args.thread_count else None
 
-    start_time = time.time()
-    with open(csv_output_file, 'w') as out_file:
+    proc_start_time = time.time()
+    with open(csv_output_file, mode='w', newline = '', encoding='utf-8-sig') as out_file:
 
-        csv_writer = csv.writer(out_file)
+        csv_writer = csv.writer(out_file, dialect=csv.excel)
         csv_writer.writerow(column_headers)
 
         input_file_ext = os.path.splitext(input_file)[1].upper()
+
+        queued_csv_rows = []
 
         with open(input_file, 'r', encoding='utf-8-sig') as in_file:
             if input_file_ext == '.CSV':
@@ -211,78 +270,75 @@ def file_search(engine, input_file, output_file, output_columns):
 
                 futures = {}
                 record_count = 0
-                while record_count < executor._max_workers: # prime the work queue
+                while record_count < executor._max_workers * 2: # prime the work queue
                     record = get_next_record(reader)
                     if not record:
                         break
                     record_count += 1
-                    futures[executor.submit(engine.search, prepare_input(record_count, record))] = record
+                    futures[executor.submit(engine.search, record_count, record)] = record
 
                 while futures:
-                    for f in concurrent.futures.as_completed(futures.keys()):
+                    done, _ = concurrent.futures.wait(
+                        futures, return_when=concurrent.futures.FIRST_COMPLETED
+                    )
+                    for fut in done:
+
+                        start_time = time.time()
+                        response_data = fut.result()
                         stat_pack['counts']['search_count'] += 1
-                        response_data = f.result()
-                        search_string = response_data['search_string']
-                        search_row = json.loads(search_string)
                         if 'error' in response_data:
-                            logging.warning(f"search record {search_row['ROW_ID']} returned {response_data['error']}")
+                            logging.warning(f"search record {response_data['search_record']['ROW_ID']} returned {response_data['error']}")
                             stat_pack['counts']['error_count'] += 1
                         else:
-                            search_response = response_data['search_response']
-                            logging.debug(f"search record {search_row['ROW_ID']} returned {len(search_response)} entities")
-                            if len(search_response) > 0:
+                            queued_csv_rows.extend(response_data['formatted_rows']) 
+
+                            if len(response_data['entities_returned']) > 0:
                                 stat_pack['counts']['found_count'] += 1
-                                if search_response[0]['MATCH_LEVEL'] == 1:
+                                if response_data['entities_returned'][0]['MATCH_LEVEL'] == 1:
                                     stat_pack['counts']['matched_count'] += 1
-                                elif search_response[0]['MATCH_LEVEL'] == 2:
+                                elif response_data['entities_returned'][0]['MATCH_LEVEL'] == 2:
                                     stat_pack['counts']['possible_count'] += 1
                                 else:
                                     stat_pack['counts']['related_count'] += 1
-                            else:
-                                search_response = [{'MATCH_NUMBER': 0}]
 
-                            search_data_source = search_row.get('DATA_SOURCE')
-                            search_record_id = search_row.get('RECORD_ID') 
-
-                            for matched_entity in search_response:
-                                
-                                audit_status = 'n/a'
-                                if search_record_id:
-                                    if matched_entity['MATCH_NUMBER'] == 0:
-                                        audit_status = 'false_negative'
-                                    else:
-                                        if record_in_list(search_data_source, search_record_id, matched_entity['RECORD_LIST']):
-                                            audit_status = 'true_positive'
-                                        else:
-                                            audit_status = 'false_positive'
+                            if args.do_audit:
+                                if len(response_data['entities_returned']) == 0:
+                                    stat_pack['audit']['best']['false_negative_count'] += 1
+                                    stat_pack['audit']['all']['false_negative_count'] += 1
+                                for matched_entity in response_data['entities_returned']:
+                                    audit_status = matched_entity.get('AUDIT_STATUS', 'n/a')
                                     stat_pack['audit']['all'][audit_status+'_count'] += 1
                                     if matched_entity['MATCH_NUMBER'] <= 1:
                                         stat_pack['audit']['best'][audit_status+'_count'] += 1
-                                matched_entity['AUDIT_STATUS'] = audit_status
 
-                                csv_record = []
-                                for column_map in column_mappings:
-                                    try:
-                                        csv_record.append(eval(column_map))
-                                    except Exception as ex:
-                                        csv_record.append('')
-                                        if matched_entity['MATCH_NUMBER'] != 0:
-                                            logging.warning(f"column map[{column_map}] failed with {ex}")
-                                csv_writer.writerow(csv_record)
+                        stat_pack['timings']['api_ms'] += response_data['api_ms']
+                        stat_pack['timings']['fmt_ms'] += response_data['fmt_ms']
+                        stat_pack['timings']['wrt_ms'] += time.time() - start_time
 
                         if stat_pack['counts']['search_count'] % 1000 == 0:
-                            eps = int(float(stat_pack['counts']['search_count']) / (float(time.time() - start_time if time.time() - start_time != 0 else 0)))
-                            elapsed_min = round((time.time() - start_time) / 60, 1)
+                            eps = int(float(stat_pack['counts']['search_count']) / (float(time.time() - proc_start_time if time.time() - proc_start_time != 0 else 0)))
+                            elapsed_min = round((time.time() - proc_start_time) / 60, 1)
                             logging.info(f"{stat_pack['counts']['search_count']} searches, {stat_pack['counts']['found_count']} found, {stat_pack['counts']['error_count']} errors, {elapsed_min} minutes elapsed, {eps} searches per second")
 
-                        futures.pop(f)
+                        if stat_pack['counts']['search_count'] % 100000 == 0:
+                            csv_writer.writerows(queued_csv_rows)
+                            queued_csv_rows = []
 
+                            response = bytearray()
+                            engine.g2_engine.stats(response)
+                            print(f"\n{response.decode()}\n")
+
+                            logging.info(f"\n{json.dumps(stat_pack, indent=4)}")
+                            with open(json_output_file, 'w') as out_file:
+                                out_file.write(json.dumps(stat_pack, indent=4))
+
+
+                        futures.pop(fut)
                         if not shut_down:
                             record = get_next_record(reader)
                             if record:
                                 record_count += 1
-                                futures[executor.submit(engine.search, prepare_input(record_count, record))] = record
-
+                                futures[executor.submit(engine.search, record_count, record)] = record
 
                 if args.debug:
                     try:
@@ -293,12 +349,14 @@ def file_search(engine, input_file, output_file, output_columns):
                     except:
                         pass
 
+        csv_writer.writerows(queued_csv_rows)
+
     stat_pack['timings']['ended'] = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
-    stat_pack['timings']['total_run_time'] = round((time.time() - start_time) / 60, 1)
-    stat_pack['timings']['searches_per_second'] = int(float(stat_pack['counts']['search_count']) / (float(time.time() - start_time if time.time() - start_time != 0 else 0)))
+    stat_pack['timings']['total_run_time'] = round((time.time() - proc_start_time) / 60, 1)
+    stat_pack['timings']['searches_per_second'] = int(float(stat_pack['counts']['search_count']) / (float(time.time() - proc_start_time if time.time() - proc_start_time != 0 else 0)))
     stat_pack['timings']['status'] = 'completed successfully' if shut_down == 0 else 'ABORTED!'
 
-    if stat_pack['audit']['best']['true_positive_count'] + stat_pack['audit']['best']['false_positive_count'] + stat_pack['audit']['best']['false_negative_count'] == 0:
+    if not args.do_audit or stat_pack['audit']['best']['true_positive_count'] + stat_pack['audit']['best']['false_positive_count'] + stat_pack['audit']['best']['false_negative_count'] == 0:
         del stat_pack['audit']
     else:
         stat_pack['audit']['best']['precision'] = round(stat_pack['audit']['best']['true_positive_count'] / (stat_pack['audit']['best']['true_positive_count'] + stat_pack['audit']['best']['false_positive_count'] + .0), 5)
@@ -307,6 +365,10 @@ def file_search(engine, input_file, output_file, output_columns):
         stat_pack['audit']['all']['precision'] = round(stat_pack['audit']['all']['true_positive_count'] / (stat_pack['audit']['all']['true_positive_count'] + stat_pack['audit']['all']['false_positive_count'] + .0), 5)
         stat_pack['audit']['all']['recall'] = round(stat_pack['audit']['all']['true_positive_count'] / (stat_pack['audit']['all']['true_positive_count'] + stat_pack['audit']['all']['false_negative_count'] + .0), 5)
         stat_pack['audit']['all']['f1-score'] = round(2 * ((stat_pack['audit']['all']['precision'] * stat_pack['audit']['all']['recall']) / (stat_pack['audit']['all']['precision'] + stat_pack['audit']['all']['recall'] + .0)), 5)
+
+    response = bytearray()
+    engine.g2_engine.stats(response)
+    print(f"\n{response.decode()}\n")
 
     logging.info(f"\n{json.dumps(stat_pack, indent=4)}")
     with open(json_output_file, 'w') as out_file:
@@ -346,15 +408,20 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config_file_name', help='Path and name of optional G2Module.ini file to use.')
     parser.add_argument('-i', '--input_file_name', help='the name of a json input file')
     parser.add_argument('-o', '--output_file_root', help='root name for output files created, both a csv and a json stats file will be created')
-    parser.add_argument('-t', '--thread_count', type=int, default=0, help='number of threads to start, defaults to max available')
+    parser.add_argument('-nt', '--thread_count', type=int, default=0, help='number of threads to start, defaults to max available')
+    parser.add_argument('-A', '--do_audit', dest='do_audit', action='store_true', default=False, help='run in debug mode')
     parser.add_argument('-D', '--debug', dest='debug', action='store_true', default=False, help='run in debug mode')
     args = parser.parse_args()
 
     loggingLevel = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%m/%d %I:%M', level=loggingLevel)
 
+    if not args.config_file_name or not os.path.exists(args.config_file_name):
+        logging.error(f"{'the configuration file was not specified or does not exist' if args.input_file_name else 'an input file is required'}")
+        sys.exit(-1)
+
     if not args.input_file_name or not os.path.exists(args.input_file_name):
-        logging.error(f"{'the input file does not exist' if args.input_file_name else 'an input file is required'}")
+        logging.error(f"{'the input file was not specified or does not exist' if args.input_file_name else 'an input file is required'}")
         sys.exit(-1)
 
     if not args.output_file_root:
@@ -363,20 +430,22 @@ if __name__ == "__main__":
 
     search_kwargs = {}
     output_columns = None
-    if args.config_file_name:
-        if not os.path.exists(args.config_file_name):
-            logging.error('the configuration file does not exist')
-            sys.exit(-1)
-        try:
-            config_data = json.load(open(args.config_file_name, 'r'))
-            search_kwargs['max_return_count'] = config_data.get('filtering', {}).get('max_return_count', 0)
-            search_kwargs['data_source_filter'] = config_data.get('filtering', {}).get('data_source_filter', '').upper()
-            search_kwargs['match_level_filter'] = config_data.get('filtering', {}).get('match_level_filter', 0)
-            search_kwargs['scoring_config'] = config_data.get('scoring', {})
-            output_columns = config_data.get('output_columns', None)
-        except Exception as err:
-            logging.error(f"error in configuration file {err}")
-            sys.exit(1)
+
+    if not os.path.exists(args.config_file_name):
+        logging.error('the configuration file does not exist')
+        sys.exit(-1)
+    try:
+        config_data = json.load(open(args.config_file_name, 'r'))
+        search_kwargs['max_return_count'] = config_data.get('filtering', {}).get('max_return_count', 0)
+        search_kwargs['data_source_filter'] = config_data.get('filtering', {}).get('data_source_filter', '').upper()
+        search_kwargs['match_level_filter'] = config_data.get('filtering', {}).get('match_level_filter', 0)
+        search_kwargs['match_score_filter'] = config_data.get('filtering', {}).get('match_score_filter', 0)
+        search_kwargs['scoring_config'] = config_data.get('scoring', {})
+        column_headers, column_mappings = prepare_output(config_data.get('output_columns', []))
+        search_kwargs['column_mappings'] = column_mappings
+    except Exception as err:
+        logging.error(f"error in configuration file {err}")
+        sys.exit(1)
 
     if os.getenv('SENZING_ENGINE_CONFIGURATION_JSON'):
         engine_config_json = os.getenv('SENZING_ENGINE_CONFIGURATION_JSON')
@@ -394,5 +463,5 @@ if __name__ == "__main__":
         logging.error(f"shutdown: {ex}")
         sys.exit(-1)
 
-    file_search(sz_engine, args.input_file_name, args.output_file_root, output_columns)
+    file_search(sz_engine, args.input_file_name, args.output_file_root, column_headers)
     del sz_engine

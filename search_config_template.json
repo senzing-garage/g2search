@@ -9,57 +9,23 @@
     {
         "NAME":
         {
-            "threshold": 70,
-            "+weight": 80
-        },
-        "DOB":
-        {
-            "threshold": 85,
-            "+weight": 10,
-            "-weight": 30
-        },
-        "ADDRESS":
-        {
-            "threshold": 30,
-            "+weight": 10
-        },
-        "PHONE":
-        {
             "threshold": 80,
-            "+weight": 10
-        },
-        "EMAIL":
-        {
-            "threshold": 80,
-            "+weight": 10
-        },
-        "SSN":
-        {
-            "threshold": 90,
-            "+weight": 10,
-            "-weight": 30
-        },
-        "DRLIC":
-        {
-            "threshold": 90,
-            "+weight": 10
-        },
-        "TAX_ID":
-        {
-            "threshold": 90,
-            "+weight": 10
+            "+weight": 100
         }
     },
     "output_columns":
     [
         {
-            "row_number": "{search_row['ROW_ID']}"
+            "row_number": "{search_record['ROW_ID']}"
         },
         {
-            "search_json": "{json.dumps(search_row)}"
+            "search_name": "{search_record['NAME_ORG']}"
         },
         {
             "match_number": "{matched_entity['MATCH_NUMBER']}"
+        },
+        {
+            "audit_status": "{matched_entity['AUDIT_STATUS']}"
         },
         {
             "match_level": "{matched_entity['MATCH_LEVEL']}"
@@ -73,6 +39,9 @@
         {
             "match_score": "{matched_entity['MATCH_SCORE']}"
         },
+    	{
+    	    "name_score": "{matched_entity['NAME_SCORE']}"
+    	},
         {
             "entity_id": "{matched_entity['ENTITY_ID']}"
         },
