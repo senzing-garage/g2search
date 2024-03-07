@@ -1,0 +1,88 @@
+{
+    "filtering":
+    {
+        "max_return_count": 10,
+        "match_level_filter": 0,
+        "data_source_filter": ""
+    },
+    "scoring":
+    {
+        "NAME":
+        {
+            "threshold": 80,
+            "+weight": 100
+        },
+        "DOB": {
+          "threshold": 85,
+          "+weight": 10,
+          "-weight": 30
+        },
+        "ADDRESS": {
+          "threshold": 30,
+          "+weight": 10
+        },
+        "PHONE": {
+          "threshold": 80,
+          "+weight": 10
+        },
+        "EMAIL": {
+          "threshold": 80,
+          "+weight": 10
+        },
+        "SSN": {
+          "threshold": 90,
+          "+weight": 10,
+          "-weight": 30
+        },
+        "DRLIC": {
+          "threshold": 90,
+          "+weight": 10
+        },
+        "TAX_ID": {
+          "threshold": 90,
+          "+weight": 10
+        }
+    },
+    "output_columns":
+    [
+        {
+            "row_number": "{search_record['ROW_ID']}"
+        },
+        {
+            "search_record": "{search_record}"
+        },
+        {
+            "match_number": "{matched_entity['MATCH_NUMBER']}"
+        },
+        {
+            "audit_status": "{matched_entity['AUDIT_STATUS']}"
+        },
+        {
+            "match_level": "{matched_entity['MATCH_LEVEL']}"
+        },
+        {
+            "match_code": "{matched_entity['MATCH_CODE']}"
+        },
+        {
+            "match_key": "{matched_entity['MATCH_KEY']}"
+        },
+        {
+            "match_score": "{matched_entity['MATCH_SCORE']}"
+        },
+    	{
+    	    "name_score": "{matched_entity['NAME_SCORE']}"
+    	},
+        {
+            "entity_id": "{matched_entity['ENTITY_ID']}"
+        },
+        {
+            "entity_name": "{matched_entity['ENTITY_NAME']}"
+        },
+        {
+            "data_sources": "{matched_entity['DATA_SOURCES']}"
+        },
+        {
+            "matched_values": "{matched_entity['MATCHED_VALUES']}"
+        }
+    ]
+}

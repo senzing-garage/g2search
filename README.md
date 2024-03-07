@@ -15,38 +15,33 @@ Heck, it may not even be appropriate for your application of Senzing!
 ## Overview
 
 The [G2Search.py](G2Search.py) utility reads a file of json formatted search records, calling the search API for each, and logs
-the results to a csv file for analysis.  It employs a mapping file to control the output.
+the results to a csv file for analysis.  It employs a configuration file to control the output.
 
 Usage:
 
 ```console
-python G2Search.py --help
-usage: G2Search.py [-h] [-c INI_FILE_NAME] [-m MAPPINGFILENAME]
-                   [-i INPUTFILENAME] [-d DELIMITERCHAR] [-e FILEENCODING]
-                   [-o OUTPUTFILENAME] [-l LOGFILENAME] [-nt THREAD_COUNT]
+python3 G2Search.py --help
+usage: G2Search.py [-h] [-c CONFIG_FILE_NAME] [-i INPUT_FILE_NAME] [-o OUTPUT_FILE_ROOT] [-nt THREAD_COUNT] [-A] [-D]
 
 optional arguments:
   -h, --help            show this help message and exit
-  -c INI_FILE_NAME, --config_file_name INI_FILE_NAME
-                        name of the g2.ini file, defaults to
-                        /etc/opt/senzing/G2Module.ini
-  -m MAPPINGFILENAME, --mappingFileName MAPPINGFILENAME
-                        the name of a mapping file
-  -i INPUTFILENAME, --inputFileName INPUTFILENAME
-                        the name of an input file
-  -o OUTPUTFILENAME, --outputFileName OUTPUTFILENAME
-                        the name of the output file
-  -l LOGFILENAME, --log_file LOGFILENAME
-                        optional statistics filename (json format)
+  -c CONFIG_FILE_NAME, --config_file_name CONFIG_FILE_NAME
+                        Path and name of optional G2Module.ini file to use.
+  -i INPUT_FILE_NAME, --input_file_name INPUT_FILE_NAME
+                        the name of a json input file
+  -o OUTPUT_FILE_ROOT, --output_file_root OUTPUT_FILE_ROOT
+                        root name for output files created, both a csv and a json stats file will be created
   -nt THREAD_COUNT, --thread_count THREAD_COUNT
-                        number of threads to start
+                        number of threads to start, defaults to max available
+  -A, --do_audit        compute precision and recall (requires expected record_id in search record)
+  -D, --debug           run in debug mode
 ```
 
 ## Contents
 
 1. [Prerequisites](#prerequisites)
 1. [Input file](#input-file)
-1. [Mapping file](#mapping-file)
+1. [Configuration file](#configuration-file)
 1. [Typical use](#typical-use)
 1. [Sample output](#sample-output)
 
@@ -55,106 +50,53 @@ optional arguments:
 - Python 3.6 or higher
 - Senzing API version 3.00 or higher
 
-*If using an SSHD container, you should first max it out with at least 4 processors and 30g of ram as the more threads
-you give it, the faster it will run.  Also, if the database container is not set to auto-scale, you should give it
-additional resources as well.*
-
 1. Place the following files in a directory of your choice:
     - [G2Search.py](G2Search.py)
-    - [search_map_template.json](search_map_template.json)
+    - [search_config_template.json](search_config_template.json)
 
-2. Set PYTHONPATH environment variable to python directory where you installed Senzing.
-    - Example: export PYTHONPATH=/opt/senzing/g2/python
-
-3. The senzing environment must be set to your project by sourcing the setupEnv script created for it.
-
-Its a good idea to place these settings in your .bashrc file to make sure the enviroment is always setup and ready to go.
-*These will already be set if you are using a Senzing docker image such as the sshd or console.*
+2. The senzing environment must be set to your project.
 
 ### Input file
 
-The input file contains the [Senzing formatted](https://senzing.zendesk.com/hc/en-us/articles/231925448-Generic-Entity-Specification-Data-Mapping) JSON string for the search requests. Each search request should be on a single line.
+The input file should contain a list of search records formatted according to the [Senzing Generic Entity Specification](https://senzing.zendesk.com/hc/en-us/articles/231925448-Generic-Entity-Specification-Data-Mapping)
 
-```console
-{"NAME_FULL":"ROBERT SMITH",  "DATE_OF_BIRTH":"11/12/1978"}
-{"NAME_FULL":"JOHN DANIELS",  "SSN_NUMBER":"123-45-6789"}
-```
 
-### Mapping file
+### Configuration file
 
-See the [search_map_template.json](search_map_template.json).   This is a template that containing the likely settings you
-would use for each search you perform.   Feel free to clone it and adjust the settings to fit the goals you have for each
-particular search you want to run.
+See the [search_config_template.json](search_config_template.json).   This is a template that containing the likely settings you
+would use for each search you perform. Feel free to clone it and adjust the settings to fit your desired output.
 
-There are several sections in this template:
+There are three sections in this template:
 
-#### Input section
+#### Filtering section
 
-This section describes the input source file.   Currently only json search messages are supported.
-
-- fileFormat: JSON
+Filters include:
+- max_return_count: only return the top (n) matches
+- match_score_filter: minimum computed match_score (see scoring section below)
+- match_level_filter: maximum match level (1=resolved, 2=possible match, 3=possibly related)
+- data_source_filter: entity must contain a record from a particular data source
 
 #### Scoring section
 
-This section dictates the weighted scoring of search results. For every matched entity in a search result, Senzing also supplies
-a 1 to 100 score of how close the name was, how close the address was, etc. These scores can be used to create an overall score
-for the matched record.
+This section dictates the weighted scoring of search results. see the article [Scoring-Search-Results](https://senzing.zendesk.com/hc/en-us/articles/360047855193-Scoring-Search-Results)
 
-see the article [Scoring-Search-Results](https://senzing.zendesk.com/hc/en-us/articles/360047855193-Scoring-Search-Results)
+#### Output Columns section
 
-#### Output section
+The syntax for each ouput column is: 
 
-This section contains search result filters and defines the output columns.
+- {"any column name": "{any python fstring expression}"}
 
-Filters include:
+python fstring values should come from either the search_record or the matched_entity values.  
 
-- matchLevelFilter: only return up to a certain match level (1=resolved, 2=possible match, etc)
-- nameScoreFilter: only return records where the name scored high enough
-- maxReturnCount: only return the top (n) matches
-- dataSourceFilter: only return entities from a particular data source
-
-Output columns:
-
-Output columns can come from the search record, the api, or the matched entity
-as indicated by the "source" attribute.
-
-- input: This is helpful so that you can quickly see what record was searched for.
-You can specify any of the following ...
-    - ROW_ID: the row number in the json file
-    - SEARCH_ENTITY_ID: the entity_id assigned to the search record if the search record was actually loaded
-      *Note: some implementations involve a load and then a search to see what else it may have hit that didn't create a relationship.*
-    - SEARCH_STRING: the entire json search record
-    - Any root level attribute from the search record such a "PRIARY_ORG_NAME"
-
-- api: you can specify any of the following :
-    - MATCH_NUMBER: the ranked match number for the entity.
-    - MATCH_LEVEL: 1=resolved, 2=possible match. 3=possibly related, 4-name only
-    - MATCH_LEVEL_CODE: just the code portion of the match_level
-    - MATCH_KEY: NAME+ADDRESS, etc
-    - MATCH_SCORE: the weighted overall score for the entity
-    - NAME_SCORE: just the best matching name score for the entity
-    - ENTITY_ID: the entity_id for the matched entity
-    - ENTITY_NAME: the best name for the entity
-    - ENTITY_SOURCES: what data sources the entity came from 
-    - SCORE_DATA: all of the score data
-
-- record: you can specify any of the following
-  - NAME_DATA: all of the names
-  - ATTRIBUTE_DATA: dates of birth, gender, etc
-  - IDENTIFIER_DATA: all of the identifiers such as passport, tax_id, etc
-  - ADDRESS_DATA: all of the addresses
-  - PHONE_DATA: all of the phone numbers
-  - OTHER_DATA: all of the non resolving attributes such as dates, statuses and amounts
+In addition to what is in the default [search_config_template.json](search_config_template.json), you can also choose any ohter attributes in the matched_entity structure computed in the score_entities function in the [G2Search.py](G2Search.py)
 
 ### Typical use
 
 ```console
-python G2Search.py -m search_map_template.json -i /search_list.json -o search_result.csv -l search_result.json
+python G2Search.py -c search_config_template.json -i /search_input.json -o search_result
 ```
 
-The -nt THREAD_COUNT parameter will default to the max the resources of the computer or container you are
-using.  However, you can override this to add more threads if desired.  For instance, if access to the database
-is slow, you can increase the number of threads running as they spend a lot of time waiting on database queries.
+You can also use the -nt THREAD_COUNT to increase the number of threads from the default max available.  For instance, if access to the database is slow, you may want to double the number of threads as they spend a lot of time waiting on database queries.
 
 ### Sample output
 
@@ -170,17 +112,4 @@ found also ranked by the weighed score.
 
 *see the [sample_search_result.json](sample_search_result.json) file*
 
-These accumulated statistics are displayed at the end of the run and captured in the log file if
-specified.
-
-- summary: The summary section shows the total number searches performed and
-the total that returned any sort of a match (resolved, possible, name_only)
-
-- resolution: the resolution section breaks down these matches by match level.  The
-"best" section only counts the best matches found while "additional" section counts
-the additional matches found.
-
-- scoring: the scoring section breaks down these matches by the weighted match_score.
-The "best" section only counts the best matches found while "additional" section counts
-the additional matches found.  The "name" section is included as so you can see the pure
-name scores beinbg returned.
+These accumulated statistics are displayed at the end of the run and captured in the output json file.
