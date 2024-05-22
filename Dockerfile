@@ -1,11 +1,11 @@
-ARG BASE_IMAGE=senzing/senzingapi-tools:3.9.0
+ARG BASE_IMAGE=senzing/senzingapi-tools:3.10.1
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2024-03-18
+ENV REFRESHED_AT=2024-05-22
 
 LABEL Name="senzing/g2search" \
-      Maintainer="support@senzing.com" \
-      Version="2.1.5"
+  Maintainer="support@senzing.com" \
+  Version="2.1.6"
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
@@ -14,18 +14,18 @@ HEALTHCHECK CMD ["/app/healthcheck.sh"]
 USER root
 
 RUN apt-get update \
- && apt-get -y install \
-      python3 \
-      python3-pip \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+  && apt-get -y install \
+  python3 \
+  python3-pip \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install packages via PIP.
 
 COPY requirements.txt .
 RUN pip3 install --upgrade pip \
- && pip3 install -r requirements.txt \
- && rm requirements.txt
+  && pip3 install -r requirements.txt \
+  && rm requirements.txt
 
 # Install packages via apt.
 
