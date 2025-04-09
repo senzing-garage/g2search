@@ -14,7 +14,10 @@ import json
 import csv
 import concurrent.futures
 
-import orjson
+try: 
+    import orjson
+except:
+    orjson = json
 
 from senzing import G2Engine, G2EngineFlags, G2Exception
 
@@ -28,8 +31,8 @@ class SZSearch:
         self.g2_engine.primeEngine()
 
         self.max_return_count = kwargs.get('max_return_count', 0)
-        self.match_score_filter = kwargs.get('match_level_filter', None)
-        self.match_level_filter = kwargs.get('match_score_filter', None)
+        self.match_score_filter = kwargs.get('match_score_filter', None)
+        self.match_level_filter = kwargs.get('match_level_filter', None)
         self.data_source_filter = kwargs.get('data_source_filter', '').upper()
         self.scoring_config = kwargs.get('scoring_config', {})
         self.column_mappings = kwargs.get('column_mappings', [])
@@ -70,9 +73,12 @@ class SZSearch:
 
         start_time = time.time()
         search_response = orjson.loads(response)
+        scored_entities = self.score_entities(search_response.get('RESOLVED_ENTITIES', []))
+        returned_entities = self.filter_entities(scored_entities)
         search_data['search_record'] = orjson.loads(search_string)
         search_data['search_record']['ROW_ID'] = row_id
-        search_data['entities_returned'] = self.filter_entities(self.score_entities(search_response.get('RESOLVED_ENTITIES', [])))
+        search_data['scored_entities'] = scored_entities
+        search_data['returned_entities'] = returned_entities
         search_data['formatted_rows'] = self.format_response(search_data)
         search_data['fmt_ms'] = time.time() - start_time
 
@@ -111,16 +117,17 @@ class SZSearch:
                 score_code = 'GNR_FN' if feature_code == 'NAME' else 'FULL_SCORE'
                 score_config = self.scoring_config.get(feature_code, {'threshold': 0, '+weight': 100})
                 best_score_record = sorted(entity_data['MATCH_INFO']['FEATURE_SCORES'][feature_code], key=lambda x: x[score_code])[-1]
-
                 matched_entity[f'{feature_code}_SCORE'] = best_score_record[score_code]
                 matched_entity[f'{feature_code}_SEARCHED'] = best_score_record['INBOUND_FEAT']
                 matched_entity[f'{feature_code}_MATCHED'] = best_score_record['CANDIDATE_FEAT']
 
                 score_detail = []
-                for score_code in best_score_record.keys():
-                    if score_code not in ('INBOUND_FEAT','CANDIDATE_FEAT') and best_score_record[score_code] >= 0:
-                        score_detail.append(f"{score_code}={best_score_record[score_code]}")
+                for score_attr in best_score_record.keys():
+                    if (score_attr.startswith('GNR') or score_attr == 'FULL_SCORE') and best_score_record[score_attr] >= 0:
+                        score_detail.append(f"{score_attr}={best_score_record[score_attr]}")
+
                 all_scores.append(f"{feature_code}({','.join(score_detail)})")
+
                 all_searched.append(f"{feature_code}({best_score_record['INBOUND_FEAT']})")
                 all_matched.append(f"{feature_code}({best_score_record['CANDIDATE_FEAT']})")
                 matching_details = f"{feature_code}({best_score_record['INBOUND_FEAT']} | {best_score_record['CANDIDATE_FEAT']} | {' | '.join(score_detail)})"
@@ -142,6 +149,9 @@ class SZSearch:
             matched_entity['MATCHED_VALUES_MULTILINE'] = '\n'.join(all_details)
             matched_entity['SEARCH_FEATURES_MULTILINE'] = '\n'.join(all_searched)
             matched_entity['ENTITY_FEATURES_MULTILINE'] = '\n'.join(all_matched)
+
+
+
             scored_entities.append(matched_entity)
         return scored_entities
 
@@ -149,11 +159,15 @@ class SZSearch:
         filtered_entities = []
         cntr = 0
         for entity_data in sorted(entity_list, key=lambda x: x['MATCH_SCORE'], reverse=True):
-            if self.match_score_filter and entity_data['MATCH_SCORE'] >= self.match_score_filter:
+            logging.debug(json.dumps(entity_data, indent=4))
+            if self.match_score_filter and entity_data['MATCH_SCORE'] < self.match_score_filter:
+                logging.debug(f"match_score {entity_data['MATCH_SCORE']} <= {self.match_score_filter}")
                 continue
-            if self.match_level_filter and entity_data['MATCH_LEVEL'] >= self.match_level_filter:
+            if self.match_level_filter and entity_data['MATCH_LEVEL'] > self.match_level_filter:
+                logging.debug(f"match_level {entity_data['MATCH_LEVL']} >= {self.match_level_filter}")
                 continue
             if self.data_source_filter and self.data_source_filter not in str(entity_data['RECORD_LIST']):
+                logging.debug(f"data_source {self.data_source_filter} not in {str(entity_data['RECORD_LIST'])}")
                 continue
             cntr += 1
             entity_data['MATCH_NUMBER'] = cntr
@@ -171,7 +185,7 @@ class SZSearch:
         search_data_source = search_record.get('DATA_SOURCE')
         search_record_id = search_record.get('RECORD_ID') 
 
-        returned_entities = search_data['entities_returned']
+        returned_entities = search_data['returned_entities']
         if len(returned_entities) == 0:
             returned_entities = [{'MATCH_NUMBER': 0}]
 
@@ -194,7 +208,7 @@ class SZSearch:
                 try:
                     formatted_record.append(eval(column_map))
                 except Exception as ex:
-                    if matched_entity['MATCH_NUMBER'] > 0:
+                    if matched_entity['MATCH_NUMBER'] > 0 and type(ex).__name__ != 'KeyError':
                         formatted_record.append(type(ex).__name__)
                     else:
                         formatted_record.append('')
@@ -241,11 +255,19 @@ def file_search(engine, input_file, output_file, column_headers):
                    'found_count': 0,
                    'matched_count': 0,
                    'possible_count': 0,
-                   'related_count': 0}}
+                   'related_count': 0},
+        'percents': {'found_pct': 0,
+                     'matched_pct': 0,
+                     'possible_pct': 0,
+                     'related_pct': 0}}
 
     stat_pack['audit'] = {}
     stat_pack['audit']['best'] = {'true_positive_count': 0, 'false_positive_count': 0, 'false_negative_count': 0}
     stat_pack['audit']['all'] = {'true_positive_count': 0, 'false_positive_count': 0, 'false_negative_count': 0}
+
+    stat_pack['match_keys'] = {}
+    stat_pack['match_keys']['best'] = {}
+    stat_pack['match_keys']['all'] = {}
 
     max_workers = args.thread_count if args.thread_count else None
 
@@ -285,6 +307,7 @@ def file_search(engine, input_file, output_file, column_headers):
 
                         start_time = time.time()
                         response_data = fut.result()
+
                         stat_pack['counts']['search_count'] += 1
                         if 'error' in response_data:
                             logging.warning(f"search record {response_data['search_record']['ROW_ID']} returned {response_data['error']}")
@@ -292,24 +315,35 @@ def file_search(engine, input_file, output_file, column_headers):
                         else:
                             queued_csv_rows.extend(response_data['formatted_rows']) 
 
-                            if len(response_data['entities_returned']) > 0:
+                            if len(response_data['returned_entities']) > 0:
                                 stat_pack['counts']['found_count'] += 1
-                                if response_data['entities_returned'][0]['MATCH_LEVEL'] == 1:
+                                if response_data['returned_entities'][0]['MATCH_LEVEL'] == 1:
                                     stat_pack['counts']['matched_count'] += 1
-                                elif response_data['entities_returned'][0]['MATCH_LEVEL'] == 2:
+                                elif response_data['returned_entities'][0]['MATCH_LEVEL'] == 2:
                                     stat_pack['counts']['possible_count'] += 1
                                 else:
                                     stat_pack['counts']['related_count'] += 1
 
-                            if args.do_audit:
-                                if len(response_data['entities_returned']) == 0:
-                                    stat_pack['audit']['best']['false_negative_count'] += 1
-                                    stat_pack['audit']['all']['false_negative_count'] += 1
-                                for matched_entity in response_data['entities_returned']:
+                            if args.do_audit and len(response_data['returned_entities']) == 0:
+                                stat_pack['audit']['best']['false_negative_count'] += 1
+                                stat_pack['audit']['all']['false_negative_count'] += 1
+                            for matched_entity in response_data['returned_entities']:
+                                if args.do_audit:
                                     audit_status = matched_entity.get('AUDIT_STATUS', 'n/a')
                                     stat_pack['audit']['all'][audit_status+'_count'] += 1
                                     if matched_entity['MATCH_NUMBER'] <= 1:
                                         stat_pack['audit']['best'][audit_status+'_count'] += 1
+
+                                match_key = matched_entity['MATCH_KEY'] if matched_entity['MATCH_KEY'] else 'blank'
+                                if match_key not in stat_pack['match_keys']['all']:
+                                    stat_pack['match_keys']['all'][match_key] = 1
+                                else:
+                                    stat_pack['match_keys']['all'][match_key] += 1
+                                if matched_entity['MATCH_NUMBER'] <= 1:
+                                    if match_key not in stat_pack['match_keys']['best']:
+                                        stat_pack['match_keys']['best'][match_key] = 1
+                                    else:
+                                        stat_pack['match_keys']['best'][match_key] += 1
 
                         stat_pack['timings']['api_ms'] += response_data['api_ms']
                         stat_pack['timings']['fmt_ms'] += response_data['fmt_ms']
@@ -366,6 +400,15 @@ def file_search(engine, input_file, output_file, column_headers):
         stat_pack['audit']['all']['recall'] = round(stat_pack['audit']['all']['true_positive_count'] / (stat_pack['audit']['all']['true_positive_count'] + stat_pack['audit']['all']['false_negative_count'] + .0), 5)
         stat_pack['audit']['all']['f1-score'] = round(2 * ((stat_pack['audit']['all']['precision'] * stat_pack['audit']['all']['recall']) / (stat_pack['audit']['all']['precision'] + stat_pack['audit']['all']['recall'] + .0)), 5)
 
+
+    stat_pack['match_keys']['best'] = dict(sorted(stat_pack['match_keys']['best'].items(), key=lambda item: item[1], reverse=True))
+    stat_pack['match_keys']['all'] = dict(sorted(stat_pack['match_keys']['all'].items(), key=lambda item: item[1], reverse=True))
+    if stat_pack['counts']['search_count'] > 0:
+        stat_pack['percents']['found_pct'] = round(stat_pack['counts']['found_count']/stat_pack['counts']['search_count']*100,2)
+        stat_pack['percents']['matched_pct'] = round(stat_pack['counts']['matched_count']/stat_pack['counts']['search_count']*100,2)
+        stat_pack['percents']['possible_pct'] = round(stat_pack['counts']['possible_count']/stat_pack['counts']['search_count']*100,2)
+        stat_pack['percents']['related_pct'] = round(stat_pack['counts']['related_count']/stat_pack['counts']['search_count']*100,2)
+
     response = bytearray()
     engine.g2_engine.stats(response)
     print(f"\n{response.decode()}\n")
@@ -413,7 +456,12 @@ if __name__ == "__main__":
     parser.add_argument('-D', '--debug', dest='debug', action='store_true', default=False, help='run in debug mode')
     args = parser.parse_args()
 
-    loggingLevel = logging.DEBUG if args.debug else logging.INFO
+    if args.debug:
+        loggingLevel = logging.DEBUG
+        args.thread_count = 1
+        print('thread count reduced to 1 for debug mode')
+    else:
+        loggingLevel = logging.INFO
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%m/%d %I:%M', level=loggingLevel)
 
     if not args.config_file_name or not os.path.exists(args.config_file_name):
